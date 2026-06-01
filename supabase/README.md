@@ -6,27 +6,11 @@ Project ref inferred from the service role JWT:
 hsnkcrxowajnadwtzdlk
 ```
 
-Likely API URL:
+Confirmed API URL:
 
 ```text
 https://hsnkcrxowajnadwtzdlk.supabase.co
 ```
-
-## What Still Needs Confirmation
-
-The link provided was the organization dashboard:
-
-```text
-https://supabase.com/dashboard/org/fssaqnfiaucfoysfenbn
-```
-
-Open the actual project, then go to:
-
-```text
-Project Settings > API > Project URL
-```
-
-Confirm that it matches the URL above.
 
 ## Running The Schema
 
@@ -36,6 +20,20 @@ Option A: Supabase SQL Editor
 2. Go to SQL Editor.
 3. Paste the contents of `supabase/schema.sql`.
 4. Run it.
+
+## Staff Login
+
+The live web app signs staff in through Supabase Auth.
+
+Create staff users here:
+
+```text
+Authentication > Users > Add user
+```
+
+Use an email/password that staff can enter on the app login screen. The row-level
+security policies in `schema.sql` allow authenticated users to manage plans,
+members, invoices, invoice items, payments, and expenses.
 
 Option B: Direct migration from this machine
 

@@ -7,7 +7,19 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-screen" id="authScreen">
+      <form class="auth-card" id="authForm">
+        <img src="assets/spaces-logo.svg" alt="Spaces logo">
+        <p class="eyebrow">Staff login</p>
+        <h1>Spaces Coworking</h1>
+        <label>Email<input required id="authEmail" type="email" autocomplete="email" placeholder="staff@spacespk.com"></label>
+        <label>Password<input required id="authPassword" type="password" autocomplete="current-password" placeholder="Password"></label>
+        <button class="primary-button" type="submit">Sign in</button>
+        <p class="auth-message" id="authMessage"></p>
+      </form>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
       <aside class="sidebar" aria-label="Primary">
         <div class="brand">
           <div class="brand-mark"><img src="assets/spaces-logo.svg" alt="Spaces logo"></div>
@@ -25,8 +37,8 @@
           <a href="#plans">Plans</a>
         </nav>
         <div class="sidebar-note">
-          <span>Preview mode</span>
-          <strong>Local data only</strong>
+          <span>Live mode</span>
+          <strong>Supabase database</strong>
         </div>
       </aside>
 
@@ -37,7 +49,9 @@
             <h1>Spaces Coworking</h1>
           </div>
           <div class="topbar-actions">
+            <span class="sync-status" id="syncStatus">Connecting</span>
             <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
+            <button class="ghost-button" id="logoutButton" type="button">Logout</button>
             <a class="primary-button" href="#member-form">Add member</a>
           </div>
         </header>

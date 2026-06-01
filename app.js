@@ -1,15 +1,7 @@
-const plans = [
-  { name: "Flexible Desk", type: "Individual", seats: 1, price: 18000 },
-  { name: "Dedicated Desk", type: "Individual", seats: 1, price: 25000 },
-  { name: "Dedicated Desk Plus", type: "Individual", seats: 1, price: 32000 },
-  { name: "Personal Desk", type: "Individual", seats: 1, price: 38000 },
-  { name: "Cubicle", type: "Room", seats: 4, price: 85000 },
-  { name: "Room 5", type: "Room", seats: 5, price: 120000 },
-  { name: "Room 7", type: "Room", seats: 7, price: 160000 },
-  { name: "Room 7 Plus", type: "Room", seats: 7, price: 175000 },
-  { name: "Room 11", type: "Room", seats: 11, price: 240000 },
-  { name: "Executive / Manager Room", type: "Room", seats: 1, price: 210000 }
-];
+const supabaseConfig = {
+  url: "https://hsnkcrxowajnadwtzdlk.supabase.co",
+  anonKey: "sb_publishable_swOIHdgfBNI_shshMi7nUw_z8OUy8k-"
+};
 
 const business = {
   name: "Spaces Coworking",
@@ -21,83 +13,13 @@ const business = {
   website: "spacespk.com"
 };
 
-function uid() {
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
+let plans = [];
+let members = [];
+let invoices = [];
+let payments = [];
+let session = loadSession();
 
-const seedMembers = [
-  {
-    id: uid(),
-    name: "Ayesha Khan",
-    company: "Northstar Studio",
-    phone: "923001112233",
-    email: "ayesha@northstar.co",
-    plan: "Dedicated Desk",
-    seats: 1,
-    joiningDate: "2026-01-12",
-    renewalDate: "2026-06-12",
-    basePlanPrice: 25000,
-    monthlyFee: 25000,
-    deposit: 10000,
-    paid: false,
-    notes: "Window side desk"
-  },
-  {
-    id: uid(),
-    name: "Bilal Ahmed",
-    company: "Indus Apps",
-    phone: "923214445566",
-    email: "bilal@indusapps.pk",
-    plan: "Room 7",
-    seats: 7,
-    joiningDate: "2025-11-01",
-    renewalDate: "2026-06-01",
-    basePlanPrice: 160000,
-    monthlyFee: 160000,
-    deposit: 50000,
-    paid: true,
-    paidAt: "2026-06-01",
-    notes: "Room 2"
-  },
-  {
-    id: uid(),
-    name: "Maha Raza",
-    company: "Solo Consultant",
-    phone: "923335551010",
-    email: "maha@example.com",
-    plan: "Flexible Desk",
-    seats: 1,
-    joiningDate: "2026-03-20",
-    renewalDate: "2026-06-20",
-    basePlanPrice: 18000,
-    monthlyFee: 18000,
-    deposit: 0,
-    paid: false,
-    notes: "Morning shift"
-  },
-  {
-    id: uid(),
-    name: "Omar Farooq",
-    company: "Ledger House",
-    phone: "923455557788",
-    email: "omar@ledgerhouse.pk",
-    plan: "Executive / Manager Room",
-    seats: 1,
-    joiningDate: "2025-09-15",
-    renewalDate: "2026-06-15",
-    basePlanPrice: 210000,
-    monthlyFee: 210000,
-    deposit: 100000,
-    paid: true,
-    paidAt: "2026-06-01",
-    notes: "Manager office"
-  }
-];
-
-const storeKey = "spaces-coworking-preview-members-v2";
-const members = loadMembers();
-
+const sessionKey = "spaces-coworking-staff-session";
 const fmt = new Intl.NumberFormat("en-PK", {
   style: "currency",
   currency: "PKR",
@@ -105,6 +27,14 @@ const fmt = new Intl.NumberFormat("en-PK", {
 });
 
 const els = {
+  authScreen: document.querySelector("#authScreen"),
+  authForm: document.querySelector("#authForm"),
+  authEmail: document.querySelector("#authEmail"),
+  authPassword: document.querySelector("#authPassword"),
+  authMessage: document.querySelector("#authMessage"),
+  appShell: document.querySelector("#appShell"),
+  logoutButton: document.querySelector("#logoutButton"),
+  syncStatus: document.querySelector("#syncStatus"),
   metricRevenue: document.querySelector("#metricRevenue"),
   metricCollected: document.querySelector("#metricCollected"),
   metricMembers: document.querySelector("#metricMembers"),
@@ -132,26 +62,172 @@ const els = {
   exportCsv: document.querySelector("#exportCsv")
 };
 
-function loadMembers() {
-  const saved = localStorage.getItem(storeKey);
-  if (!saved) return seedMembers;
+function loadSession() {
   try {
-    return JSON.parse(saved);
+    return JSON.parse(localStorage.getItem(sessionKey));
   } catch {
-    return seedMembers;
+    return null;
   }
 }
 
-function saveMembers() {
-  localStorage.setItem(storeKey, JSON.stringify(members));
+function saveSession(nextSession) {
+  session = nextSession;
+  if (nextSession) {
+    localStorage.setItem(sessionKey, JSON.stringify(nextSession));
+  } else {
+    localStorage.removeItem(sessionKey);
+  }
+}
+
+function showAuth(message = "") {
+  els.authScreen.hidden = false;
+  els.appShell.hidden = true;
+  els.authMessage.textContent = message;
+}
+
+function showApp() {
+  els.authScreen.hidden = true;
+  els.appShell.hidden = false;
+}
+
+async function login(email, password) {
+  const response = await fetch(`${supabaseConfig.url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseConfig.anonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email, password })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error_description || payload.msg || "Login failed");
+  }
+  saveSession(payload);
+}
+
+async function supabaseRequest(path, options = {}) {
+  if (!session?.access_token) {
+    throw new Error("Staff login required");
+  }
+  const headers = {
+    apikey: supabaseConfig.anonKey,
+    Authorization: `Bearer ${session.access_token}`,
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  const response = await fetch(`${supabaseConfig.url}${path}`, {
+    ...options,
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  if (response.status === 401) {
+    saveSession(null);
+    showAuth("Session expired. Please sign in again.");
+    throw new Error("Session expired");
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Supabase request failed: ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+async function selectRows(table, query = "select=*") {
+  return supabaseRequest(`/rest/v1/${table}?${query}`, { method: "GET" });
+}
+
+async function insertRow(table, row) {
+  const rows = await supabaseRequest(`/rest/v1/${table}`, {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: row
+  });
+  return rows[0];
+}
+
+async function patchRow(table, id, row) {
+  const rows = await supabaseRequest(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: row
+  });
+  return rows[0];
+}
+
+async function loadData() {
+  setSyncStatus("Syncing", "busy");
+  const [planRows, memberRows, invoiceRows, paymentRows] = await Promise.all([
+    selectRows("plans", "select=*&active=eq.true&order=name.asc"),
+    selectRows("members", "select=*&status=eq.active&order=created_at.desc"),
+    selectRows("invoices", "select=*&order=created_at.desc"),
+    selectRows("payments", "select=*&order=paid_at.desc")
+  ]);
+  plans = planRows.map(mapPlan);
+  invoices = invoiceRows;
+  payments = paymentRows;
+  members = memberRows.map(mapMember);
+  renderPlans();
+  setDefaultDates();
+  syncPlanFields();
+  render();
+  setSyncStatus("Live", "ok");
+}
+
+function mapPlan(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.category === "room" ? "Room" : "Individual",
+    seats: row.default_seats,
+    price: row.standard_monthly_rate
+  };
+}
+
+function mapMember(row) {
+  const memberInvoices = invoices.filter((invoice) => invoice.member_id === row.id);
+  const paidInvoice = memberInvoices.find((invoice) => invoice.status === "paid");
+  const paidPayment = paidInvoice
+    ? payments.find((payment) => payment.invoice_id === paidInvoice.id)
+    : null;
+  return {
+    id: row.id,
+    name: row.full_name,
+    company: row.company,
+    phone: row.phone,
+    email: row.email,
+    planId: row.plan_id,
+    plan: row.plan_name,
+    seats: row.seats,
+    joiningDate: row.joining_date,
+    renewalDate: row.renewal_date,
+    basePlanPrice: row.standard_monthly_rate,
+    monthlyFee: row.offered_monthly_rate,
+    deposit: row.deposit_amount,
+    discountReason: row.discount_reason,
+    notes: row.notes,
+    paid: Boolean(paidInvoice),
+    paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null
+  };
+}
+
+function setSyncStatus(text, state = "") {
+  els.syncStatus.textContent = text;
+  els.syncStatus.dataset.state = state;
 }
 
 function formatDate(dateString) {
+  if (!dateString) return "";
   return new Date(`${dateString}T00:00:00`).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric"
   });
+}
+
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function daysUntil(dateString) {
@@ -173,7 +249,6 @@ function render() {
   renderMembers();
   renderReceipts();
   renderLedger();
-  renderPlans();
   renderBars();
 }
 
@@ -197,11 +272,11 @@ function renderMetrics() {
 function renderMembers() {
   const query = els.memberSearch.value.trim().toLowerCase();
   const filtered = members.filter((member) => {
-    const haystack = `${member.name} ${member.company} ${member.phone} ${member.plan}`.toLowerCase();
+    const haystack = `${member.name} ${member.company || ""} ${member.phone} ${member.plan}`.toLowerCase();
     return haystack.includes(query);
   });
 
-  els.membersTable.innerHTML = filtered.map((member) => {
+  els.membersTable.innerHTML = filtered.length ? filtered.map((member) => {
     const state = paymentState(member);
     return `
       <tr>
@@ -218,7 +293,7 @@ function renderMembers() {
         </td>
       </tr>
     `;
-  }).join("");
+  }).join("") : `<tr><td colspan="7">No members found.</td></tr>`;
 }
 
 function renderReceipts() {
@@ -242,31 +317,27 @@ function renderReceipts() {
 }
 
 function renderLedger() {
+  const collected = members.filter((member) => member.paid);
+  const outstanding = members.filter((member) => !member.paid);
   const groups = [
-    ["Collected", members.filter((member) => member.paid)],
-    ["Outstanding", members.filter((member) => !member.paid)],
-    ["Deposits held", members]
+    ["Collected", collected, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Outstanding", outstanding, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Deposits held", members, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
   ];
 
-  els.ledger.innerHTML = groups.map(([label, list]) => {
-    const amount = label === "Deposits held"
-      ? list.reduce((sum, member) => sum + Number(member.deposit || 0), 0)
-      : list.reduce((sum, member) => sum + Number(member.monthlyFee), 0);
-
-    return `
-      <div class="ledger-row">
-        <div>
-          <strong>${label}</strong>
-          <span>${list.length} record${list.length === 1 ? "" : "s"}</span>
-        </div>
-        <strong>${fmt.format(amount)}</strong>
+  els.ledger.innerHTML = groups.map(([label, list, amount]) => `
+    <div class="ledger-row">
+      <div>
+        <strong>${label}</strong>
+        <span>${list.length} record${list.length === 1 ? "" : "s"}</span>
       </div>
-    `;
-  }).join("");
+      <strong>${fmt.format(amount)}</strong>
+    </div>
+  `).join("");
 }
 
 function renderPlans() {
-  els.planList.innerHTML = plans.map((plan) => `
+  els.planList.innerHTML = plans.length ? plans.map((plan) => `
     <article class="plan-card">
       <header>
         <div>
@@ -276,10 +347,10 @@ function renderPlans() {
         <strong>${fmt.format(plan.price)}</strong>
       </header>
     </article>
-  `).join("");
+  `).join("") : `<p class="empty">Run the Supabase schema to load membership plans.</p>`;
 
   els.planSelect.innerHTML = plans.map((plan) => `
-    <option value="${plan.name}" data-seats="${plan.seats}" data-price="${plan.price}">${plan.name}</option>
+    <option value="${plan.name}" data-id="${plan.id}" data-seats="${plan.seats}" data-price="${plan.price}">${plan.name}</option>
   `).join("");
 }
 
@@ -292,12 +363,12 @@ function renderBars() {
   }).filter((row) => row.amount > 0);
   const max = Math.max(...revenueByPlan.map((row) => row.amount), 1);
 
-  els.planBars.innerHTML = revenueByPlan.map((row) => `
+  els.planBars.innerHTML = revenueByPlan.length ? revenueByPlan.map((row) => `
     <div class="bar-row">
       <div class="bar-label"><span>${row.name}</span><strong>${fmt.format(row.amount)}</strong></div>
       <div class="bar-track"><div class="bar-fill" style="width: ${Math.max(8, Math.round((row.amount / max) * 100))}%"></div></div>
     </div>
-  `).join("");
+  `).join("") : `<p class="empty">No revenue yet.</p>`;
 }
 
 function stateLabel(state) {
@@ -314,18 +385,66 @@ function rateLabel(member) {
   return `${fmt.format(monthlyFee)}<span class="rate-note">Standard ${fmt.format(basePrice)} | Discount ${fmt.format(discount)}</span>`;
 }
 
-function markPaid(id) {
+async function markPaid(id) {
   const member = members.find((item) => item.id === id);
   if (!member) return;
-  member.paid = true;
-  member.paidAt = new Date().toISOString().slice(0, 10);
-  saveMembers();
-  render();
-  openInvoice(member, { mode: "receipt" });
+  try {
+    setSyncStatus("Saving", "busy");
+    const invoice = await createInvoice(member, {
+      mode: "receipt",
+      status: "paid",
+      amount: member.monthlyFee,
+      standardPrice: member.basePlanPrice,
+      validTill: member.renewalDate
+    });
+    await insertRow("payments", {
+      invoice_id: invoice.id,
+      member_id: member.id,
+      amount: Number(member.monthlyFee),
+      payment_method: "cash",
+      reference: invoice.invoice_number
+    });
+    await loadData();
+    const updatedMember = members.find((item) => item.id === id) || member;
+    openInvoice(updatedMember, { mode: "receipt", invoiceId: invoice.invoice_number });
+  } catch (error) {
+    alert(`Could not mark paid: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
+}
+
+async function createInvoice(member, override = {}) {
+  const standardPrice = Number(override.standardPrice ?? member.basePlanPrice ?? member.monthlyFee);
+  const amount = Number(override.amount ?? member.monthlyFee);
+  const tax = Number(override.tax ?? 0);
+  const discount = Math.max(0, standardPrice - amount);
+  const invoiceNumber = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+  const invoice = await insertRow("invoices", {
+    invoice_number: invoiceNumber,
+    member_id: member.id,
+    invoice_type: override.mode === "edited" ? "edited" : "membership",
+    issue_date: isoToday(),
+    valid_till: override.validTill || member.renewalDate,
+    standard_amount: standardPrice,
+    discount_amount: discount,
+    subtotal_amount: amount,
+    tax_amount: tax,
+    total_amount: amount + tax,
+    status: override.status || "sent",
+    edit_note: override.note || null
+  });
+  await insertRow("invoice_items", {
+    invoice_id: invoice.id,
+    description: member.plan,
+    quantity: Number(override.seats ?? member.seats),
+    unit_price: standardPrice,
+    amount
+  });
+  return invoice;
 }
 
 function openInvoice(member, override = {}) {
-  const invoiceId = override.invoiceId || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
+  const invoiceId = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
   const standardPrice = Number(override.standardPrice ?? member.basePlanPrice ?? member.monthlyFee);
   const amount = Number(override.amount ?? member.monthlyFee);
   const tax = Number(override.tax ?? 0);
@@ -335,7 +454,7 @@ function openInvoice(member, override = {}) {
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
   const validTill = override.validTill || member.renewalDate;
-  const issuedDate = member.paidAt || new Date().toISOString().slice(0, 10);
+  const issuedDate = member.paidAt || isoToday();
   const message = [
     `Spaces Coworking ${statusLine.toLowerCase()} ${invoiceId}`,
     `Member: ${member.name}`,
@@ -474,7 +593,7 @@ function cleanPhone(phone) {
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -520,7 +639,10 @@ function setDefaultDates() {
 
 function syncPlanFields() {
   const selected = els.planSelect.options[els.planSelect.selectedIndex];
-  if (!selected) return;
+  if (!selected) {
+    els.rateSummary.innerHTML = `<strong>Plans unavailable:</strong> Run the Supabase schema and refresh.`;
+    return;
+  }
   els.memberForm.elements.seats.value = selected.dataset.seats;
   els.memberForm.elements.basePlanPrice.value = selected.dataset.price;
   els.memberForm.elements.monthlyFee.value = selected.dataset.price;
@@ -536,6 +658,28 @@ function renderRateSummary() {
     : `<strong>Standard signup:</strong> Offered rate matches the selected plan.`;
 }
 
+async function createMemberFromForm() {
+  const data = new FormData(els.memberForm);
+  const selected = els.planSelect.options[els.planSelect.selectedIndex];
+  const row = await insertRow("members", {
+    full_name: data.get("name"),
+    company: data.get("company") || null,
+    phone: data.get("phone"),
+    email: data.get("email") || null,
+    plan_id: selected?.dataset.id || null,
+    plan_name: data.get("plan"),
+    seats: Number(data.get("seats")),
+    joining_date: data.get("joiningDate"),
+    renewal_date: data.get("renewalDate"),
+    standard_monthly_rate: Number(data.get("basePlanPrice")),
+    offered_monthly_rate: Number(data.get("monthlyFee")),
+    deposit_amount: Number(data.get("deposit") || 0),
+    discount_reason: data.get("discountReason") || null,
+    notes: data.get("notes") || null
+  });
+  return row;
+}
+
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
@@ -544,6 +688,23 @@ document.addEventListener("click", (event) => {
   if (button.dataset.action === "paid") markPaid(member.id);
   if (button.dataset.action === "receipt") openReceipt(member);
   if (button.dataset.action === "edit-invoice") openEditedInvoiceForm(member);
+});
+
+els.authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  els.authMessage.textContent = "Signing in...";
+  try {
+    await login(els.authEmail.value, els.authPassword.value);
+    showApp();
+    await loadData();
+  } catch (error) {
+    els.authMessage.textContent = error.message;
+  }
+});
+
+els.logoutButton.addEventListener("click", () => {
+  saveSession(null);
+  showAuth("Signed out.");
 });
 
 els.planSelect.addEventListener("change", syncPlanFields);
@@ -559,52 +720,54 @@ els.resetMemberForm.addEventListener("click", () => {
   }, 0);
 });
 
-els.memberForm.addEventListener("submit", (event) => {
+els.memberForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const data = new FormData(els.memberForm);
-  members.unshift({
-    id: uid(),
-    name: data.get("name"),
-    company: data.get("company"),
-    phone: data.get("phone"),
-    email: data.get("email"),
-    plan: data.get("plan"),
-    seats: Number(data.get("seats")),
-    joiningDate: data.get("joiningDate"),
-    renewalDate: data.get("renewalDate"),
-    basePlanPrice: Number(data.get("basePlanPrice")),
-    monthlyFee: Number(data.get("monthlyFee")),
-    deposit: Number(data.get("deposit")),
-    discountReason: data.get("discountReason"),
-    paid: false,
-    notes: data.get("notes")
-  });
-  saveMembers();
-  els.memberForm.reset();
-  setDefaultDates();
-  syncPlanFields();
-  render();
+  try {
+    setSyncStatus("Saving", "busy");
+    await createMemberFromForm();
+    els.memberForm.reset();
+    await loadData();
+    setDefaultDates();
+    syncPlanFields();
+  } catch (error) {
+    alert(`Could not save member: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
 });
 
-els.editInvoiceForm.addEventListener("submit", (event) => {
+els.editInvoiceForm.addEventListener("submit", async (event) => {
   if (event.submitter?.value === "cancel") return;
   event.preventDefault();
   const data = new FormData(els.editInvoiceForm);
   const member = members.find((item) => item.id === data.get("memberId"));
   if (!member) return;
-  els.editInvoiceDialog.close();
-  openInvoice(member, {
+  const override = {
     mode: "edited",
-    invoiceId: `INV-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`,
+    invoiceId: `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
     seats: Number(data.get("seats")),
     standardPrice: Number(data.get("standardPrice")),
     amount: Number(data.get("invoiceAmount")),
     validTill: data.get("validTill"),
     note: data.get("editNote")
-  });
+  };
+  try {
+    setSyncStatus("Saving", "busy");
+    await createInvoice(member, override);
+    await loadData();
+    els.editInvoiceDialog.close();
+    openInvoice(member, override);
+  } catch (error) {
+    alert(`Could not create edited invoice: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
 });
 
-renderPlans();
-setDefaultDates();
-syncPlanFields();
-render();
+if (session?.access_token) {
+  showApp();
+  loadData().catch((error) => {
+    console.error(error);
+    showAuth("Please sign in again.");
+  });
+} else {
+  showAuth();
+}
