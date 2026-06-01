@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spaces Coworking Management</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="brand">
+          <div class="brand-mark"><img src="assets/spaces-logo.svg" alt="Spaces logo"></div>
+          <div>
+            <strong>Spaces</strong>
+            <span>Coworking</span>
+          </div>
+        </div>
+        <nav>
+          <a href="#dashboard" class="active">Dashboard</a>
+          <a href="#member-form">Member Form</a>
+          <a href="#members">Members</a>
+          <a href="#receipts">Receipts</a>
+          <a href="#accounting">Accounting</a>
+          <a href="#plans">Plans</a>
+        </nav>
+        <div class="sidebar-note">
+          <span>Preview mode</span>
+          <strong>Local data only</strong>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Operations console</p>
+            <h1>Spaces Coworking</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
+            <a class="primary-button" href="#member-form">Add member</a>
+          </div>
+        </header>
+
+        <section class="summary-grid" id="dashboard" aria-label="Business summary">
+          <article class="metric">
+            <span>Monthly revenue</span>
+            <strong id="metricRevenue">PKR 0</strong>
+            <small id="metricCollected">0% collected</small>
+          </article>
+          <article class="metric">
+            <span>Active members</span>
+            <strong id="metricMembers">0</strong>
+            <small id="metricSeats">0 seats occupied</small>
+          </article>
+          <article class="metric">
+            <span>Renewals due</span>
+            <strong id="metricDue">0</strong>
+            <small>Next 7 days</small>
+          </article>
+          <article class="metric">
+            <span>Pending invoices</span>
+            <strong id="metricPending">0</strong>
+            <small id="metricOutstanding">PKR 0 outstanding</small>
+          </article>
+        </section>
+
+        <section class="workspace-band">
+          <div class="visual-panel photo-panel">
+            <img src="assets/spaces-interior.jpg" alt="Spaces Coworking shared workspace interior">
+            <div class="photo-caption">
+              <strong>Spaces coworking floor</strong>
+              <span>Desks, private rooms, cubicles, lounge, and executive space</span>
+            </div>
+          </div>
+          <div class="insight-panel">
+            <div class="section-heading">
+              <p class="eyebrow">This month</p>
+              <h2>Occupancy and revenue mix</h2>
+            </div>
+            <div class="bars" id="planBars"></div>
+          </div>
+        </section>
+
+        <section class="panel member-form-panel" id="member-form">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Staff member form</p>
+              <h2>Register a new member</h2>
+            </div>
+            <span class="form-hint">Plan rate can be discounted before saving.</span>
+          </div>
+          <form id="memberForm" class="staff-form">
+            <div class="form-grid">
+              <label>Name<input required name="name" placeholder="Member name"></label>
+              <label>Company<input name="company" placeholder="Company or team"></label>
+              <label>Phone<input required name="phone" placeholder="923001234567"></label>
+              <label>Email<input name="email" type="email" placeholder="name@example.com"></label>
+              <label>Plan<select required name="plan" id="planSelect"></select></label>
+              <label>Seats<input required name="seats" type="number" min="1" value="1"></label>
+              <label>Standard plan rate<input readonly name="basePlanPrice" type="number" min="0"></label>
+              <label>Offered monthly rate<input required name="monthlyFee" type="number" min="0" step="500"></label>
+              <label>Joining date<input required name="joiningDate" type="date"></label>
+              <label>Renewal date<input required name="renewalDate" type="date"></label>
+              <label>Deposit<input name="deposit" type="number" min="0" step="500" value="0"></label>
+              <label>Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
+              <label class="span-two">Notes<textarea name="notes" rows="3" placeholder="Access card, office number, custom terms"></textarea></label>
+            </div>
+            <div class="rate-summary" id="rateSummary"></div>
+            <div class="modal-actions inline-actions">
+              <button class="ghost-button" id="resetMemberForm" type="reset">Clear</button>
+              <button class="primary-button" type="submit">Save member</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="content-grid" id="members">
+          <div class="panel wide">
+            <div class="section-heading row">
+              <div>
+                <p class="eyebrow">Member database</p>
+                <h2>Members and renewal dates</h2>
+              </div>
+              <label class="search">
+                <span>Search</span>
+                <input id="memberSearch" type="search" placeholder="Name, company, phone, plan">
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Plan</th>
+                    <th>Joining</th>
+                    <th>Renewal</th>
+                    <th>Fee</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="membersTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel" id="receipts">
+            <div class="section-heading">
+              <p class="eyebrow">Receipt generator</p>
+              <h2>Payment queue</h2>
+            </div>
+            <div id="receiptQueue" class="receipt-list"></div>
+          </div>
+        </section>
+
+        <section class="content-grid" id="accounting">
+          <div class="panel">
+            <div class="section-heading">
+              <p class="eyebrow">Accounting</p>
+              <h2>Monthly ledger</h2>
+            </div>
+            <div class="ledger" id="ledger"></div>
+          </div>
+          <div class="panel" id="plans">
+            <div class="section-heading">
+              <p class="eyebrow">Membership options</p>
+              <h2>Plan catalog</h2>
+            </div>
+            <div class="plan-list" id="planList"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="editInvoiceDialog">
+      <form method="dialog" id="editInvoiceForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Edited invoice</p>
+            <h2>Send discounted invoice</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close" type="submit">x</button>
+        </div>
+        <div class="form-grid">
+          <input type="hidden" name="memberId">
+          <label>Member<input readonly name="memberName"></label>
+          <label>Plan<input readonly name="plan"></label>
+          <label>Seats<input required name="seats" type="number" min="1"></label>
+          <label>Standard price<input required name="standardPrice" type="number" min="0" step="500"></label>
+          <label>Invoice amount<input required name="invoiceAmount" type="number" min="0" step="500"></label>
+          <label>Valid till<input required name="validTill" type="date"></label>
+          <label class="span-two">Discount / edit note<input name="editNote" placeholder="Discount approved by, temporary rate, adjustment details"></label>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" value="cancel" type="submit">Cancel</button>
+          <button class="primary-button" value="default" type="submit">Preview edited invoice</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="receiptDialog">
+      <div class="receipt-preview" id="receiptPreview"></div>
+      <div class="modal-actions">
+        <button class="ghost-button" id="closeReceipt" type="button">Close</button>
+        <button class="ghost-button" id="printReceipt" type="button">Print</button>
+        <a class="primary-button" id="whatsappReceipt" target="_blank" rel="noreferrer">Send WhatsApp</a>
+      </div>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
