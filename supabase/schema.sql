@@ -1,5 +1,14 @@
 create extension if not exists pgcrypto;
 
+create table if not exists public.staff_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  role text not null default 'staff' check (role in ('owner', 'manager', 'staff')),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.plans (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -87,12 +96,33 @@ create table if not exists public.expenses (
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 begin
   new.updated_at = now();
   return new;
 end;
 $$;
+
+create or replace function public.is_active_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.staff_profiles
+    where user_id = auth.uid()
+      and active = true
+  );
+$$;
+
+drop trigger if exists staff_profiles_set_updated_at on public.staff_profiles;
+create trigger staff_profiles_set_updated_at
+before update on public.staff_profiles
+for each row execute function public.set_updated_at();
 
 drop trigger if exists plans_set_updated_at on public.plans;
 create trigger plans_set_updated_at
@@ -128,6 +158,7 @@ on conflict (name) do update set
   active = true,
   updated_at = now();
 
+alter table public.staff_profiles enable row level security;
 alter table public.plans enable row level security;
 alter table public.members enable row level security;
 alter table public.invoices enable row level security;
@@ -135,45 +166,164 @@ alter table public.invoice_items enable row level security;
 alter table public.payments enable row level security;
 alter table public.expenses enable row level security;
 
-drop policy if exists "Authenticated staff can manage plans" on public.plans;
-create policy "Authenticated staff can manage plans"
-on public.plans for all
+drop policy if exists "Staff can read their own profile" on public.staff_profiles;
+create policy "Staff can read their own profile"
+on public.staff_profiles for select
 to authenticated
-using (true)
-with check (true);
+using (user_id = auth.uid());
+
+drop policy if exists "Authenticated staff can manage plans" on public.plans;
+drop policy if exists "Staff can read plans" on public.plans;
+create policy "Staff can read plans"
+on public.plans for select
+to authenticated
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert plans" on public.plans;
+create policy "Staff can insert plans"
+on public.plans for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update plans" on public.plans;
+create policy "Staff can update plans"
+on public.plans for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete plans" on public.plans;
+create policy "Staff can delete plans"
+on public.plans for delete
+to authenticated
+using (public.is_active_staff());
 
 drop policy if exists "Authenticated staff can manage members" on public.members;
-create policy "Authenticated staff can manage members"
-on public.members for all
+drop policy if exists "Staff can read members" on public.members;
+create policy "Staff can read members"
+on public.members for select
 to authenticated
-using (true)
-with check (true);
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert members" on public.members;
+create policy "Staff can insert members"
+on public.members for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update members" on public.members;
+create policy "Staff can update members"
+on public.members for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete members" on public.members;
+create policy "Staff can delete members"
+on public.members for delete
+to authenticated
+using (public.is_active_staff());
 
 drop policy if exists "Authenticated staff can manage invoices" on public.invoices;
-create policy "Authenticated staff can manage invoices"
-on public.invoices for all
+drop policy if exists "Staff can read invoices" on public.invoices;
+create policy "Staff can read invoices"
+on public.invoices for select
 to authenticated
-using (true)
-with check (true);
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert invoices" on public.invoices;
+create policy "Staff can insert invoices"
+on public.invoices for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update invoices" on public.invoices;
+create policy "Staff can update invoices"
+on public.invoices for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete invoices" on public.invoices;
+create policy "Staff can delete invoices"
+on public.invoices for delete
+to authenticated
+using (public.is_active_staff());
 
 drop policy if exists "Authenticated staff can manage invoice items" on public.invoice_items;
-create policy "Authenticated staff can manage invoice items"
-on public.invoice_items for all
+drop policy if exists "Staff can read invoice items" on public.invoice_items;
+create policy "Staff can read invoice items"
+on public.invoice_items for select
 to authenticated
-using (true)
-with check (true);
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert invoice items" on public.invoice_items;
+create policy "Staff can insert invoice items"
+on public.invoice_items for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update invoice items" on public.invoice_items;
+create policy "Staff can update invoice items"
+on public.invoice_items for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete invoice items" on public.invoice_items;
+create policy "Staff can delete invoice items"
+on public.invoice_items for delete
+to authenticated
+using (public.is_active_staff());
 
 drop policy if exists "Authenticated staff can manage payments" on public.payments;
-create policy "Authenticated staff can manage payments"
-on public.payments for all
+drop policy if exists "Staff can read payments" on public.payments;
+create policy "Staff can read payments"
+on public.payments for select
 to authenticated
-using (true)
-with check (true);
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert payments" on public.payments;
+create policy "Staff can insert payments"
+on public.payments for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update payments" on public.payments;
+create policy "Staff can update payments"
+on public.payments for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete payments" on public.payments;
+create policy "Staff can delete payments"
+on public.payments for delete
+to authenticated
+using (public.is_active_staff());
 
 drop policy if exists "Authenticated staff can manage expenses" on public.expenses;
-create policy "Authenticated staff can manage expenses"
-on public.expenses for all
+drop policy if exists "Staff can read expenses" on public.expenses;
+create policy "Staff can read expenses"
+on public.expenses for select
 to authenticated
-using (true)
-with check (true);
+using (public.is_active_staff());
 
+drop policy if exists "Staff can insert expenses" on public.expenses;
+create policy "Staff can insert expenses"
+on public.expenses for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update expenses" on public.expenses;
+create policy "Staff can update expenses"
+on public.expenses for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete expenses" on public.expenses;
+create policy "Staff can delete expenses"
+on public.expenses for delete
+to authenticated
+using (public.is_active_staff());
