@@ -50,6 +50,7 @@ let members = [];
 let memberRecords = [];
 let invoices = [];
 let payments = [];
+let staffProfile = null;
 let session = loadSession();
 
 const sessionKey = "spaces-coworking-staff-session";
@@ -203,8 +204,19 @@ async function patchRow(table, id, row) {
   return rows[0];
 }
 
+async function loadStaffProfile() {
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Staff login required");
+  const rows = await selectRows("staff_profiles", `select=*&user_id=eq.${encodeURIComponent(userId)}&active=eq.true`);
+  if (!rows.length) {
+    throw new Error("This login exists, but it has not been added to the Spaces staff list yet.");
+  }
+  return rows[0];
+}
+
 async function loadData() {
   setSyncStatus("Syncing", "busy");
+  staffProfile = await loadStaffProfile();
   const [planRows, memberRows, invoiceRows, paymentRows] = await Promise.all([
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
     selectRows("members", "select=*&order=created_at.desc"),
@@ -434,9 +446,10 @@ function renderMetrics() {
   const seats = members.reduce((sum, member) => sum + Number(member.seats), 0);
   const capacity = capacityForCategory("rooms") + deskCapacities.flexible + deskCapacities.dedicated + deskCapacities.personal;
   const percentage = total ? Math.round((collected / total) * 100) : 0;
+  const hideMonthlyRevenue = staffProfile?.role === "staff";
 
-  els.metricRevenue.textContent = fmt.format(total);
-  els.metricCollected.textContent = `${percentage}% collected`;
+  els.metricRevenue.textContent = hideMonthlyRevenue ? "Restricted" : fmt.format(total);
+  els.metricCollected.textContent = hideMonthlyRevenue ? "Owner / manager only" : `${percentage}% collected`;
   els.metricMembers.textContent = members.length;
   els.metricSeats.textContent = `${seats}/${capacity} seats utilized (${percentOf(seats, capacity)}%)`;
   els.metricDue.textContent = dueSoon;

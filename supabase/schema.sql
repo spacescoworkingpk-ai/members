@@ -119,6 +119,22 @@ as $$
   );
 $$;
 
+create or replace function public.is_staff_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.staff_profiles
+    where user_id = auth.uid()
+      and active = true
+      and role in ('owner', 'manager')
+  );
+$$;
+
 drop trigger if exists staff_profiles_set_updated_at on public.staff_profiles;
 create trigger staff_profiles_set_updated_at
 before update on public.staff_profiles
@@ -176,6 +192,25 @@ create policy "Staff can read their own profile"
 on public.staff_profiles for select
 to authenticated
 using (user_id = auth.uid());
+
+drop policy if exists "Staff admins can read staff profiles" on public.staff_profiles;
+create policy "Staff admins can read staff profiles"
+on public.staff_profiles for select
+to authenticated
+using (public.is_staff_admin());
+
+drop policy if exists "Staff admins can insert staff profiles" on public.staff_profiles;
+create policy "Staff admins can insert staff profiles"
+on public.staff_profiles for insert
+to authenticated
+with check (public.is_staff_admin());
+
+drop policy if exists "Staff admins can update staff profiles" on public.staff_profiles;
+create policy "Staff admins can update staff profiles"
+on public.staff_profiles for update
+to authenticated
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
 drop policy if exists "Authenticated staff can manage plans" on public.plans;
 drop policy if exists "Staff can read plans" on public.plans;
