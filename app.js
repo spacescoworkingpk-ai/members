@@ -13,6 +13,12 @@ const business = {
   website: "spacespk.com"
 };
 
+const deskCapacities = {
+  flexible: 14,
+  dedicated: 8,
+  personal: 2
+};
+
 let plans = [];
 let members = [];
 let memberRecords = [];
@@ -263,6 +269,52 @@ function isRoomMember(member) {
   return member.planCategory === "room" || inferPlanCategory(member.plan) === "room";
 }
 
+function memberCategory(member) {
+  const planName = member.plan || "";
+  if (isRoomMember(member)) return { key: "rooms", label: "Rooms" };
+  if (/flexible/i.test(planName)) return { key: "flexible", label: "Flexible Desk" };
+  if (/dedicated/i.test(planName)) return { key: "dedicated", label: "Dedicated Desk" };
+  if (/personal/i.test(planName)) return { key: "personal", label: "Personal Desk" };
+  return { key: "other", label: "Other" };
+}
+
+function roomCapacity() {
+  return plans
+    .filter((plan) => plan.category === "room")
+    .reduce((sum, plan) => sum + Number(plan.seats || 0), 0);
+}
+
+function capacityForCategory(key) {
+  if (key === "rooms") return roomCapacity();
+  return deskCapacities[key] || 0;
+}
+
+function percentOf(value, total) {
+  return total ? Math.round((Number(value) / Number(total)) * 100) : 0;
+}
+
+function categorySummaries() {
+  const categories = [
+    { key: "rooms", label: "Rooms", capacity: capacityForCategory("rooms") },
+    { key: "flexible", label: "Flexible Desk", capacity: capacityForCategory("flexible") },
+    { key: "dedicated", label: "Dedicated Desk", capacity: capacityForCategory("dedicated") },
+    { key: "personal", label: "Personal Desk", capacity: capacityForCategory("personal") }
+  ];
+
+  return categories.map((category) => {
+    const categoryMembers = members.filter((member) => memberCategory(member).key === category.key);
+    const occupied = categoryMembers.reduce((sum, member) => sum + Number(member.seats || 0), 0);
+    const revenue = categoryMembers.reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0);
+    return {
+      ...category,
+      members: categoryMembers,
+      occupied,
+      revenue,
+      utilization: percentOf(occupied, category.capacity)
+    };
+  });
+}
+
 function render() {
   renderMetrics();
   renderMembers();
@@ -278,12 +330,13 @@ function renderMetrics() {
   const pending = total - collected;
   const dueSoon = members.filter((member) => !member.paid && daysUntil(member.renewalDate) <= 7).length;
   const seats = members.reduce((sum, member) => sum + Number(member.seats), 0);
+  const capacity = capacityForCategory("rooms") + deskCapacities.flexible + deskCapacities.dedicated + deskCapacities.personal;
   const percentage = total ? Math.round((collected / total) * 100) : 0;
 
   els.metricRevenue.textContent = fmt.format(total);
   els.metricCollected.textContent = `${percentage}% collected`;
   els.metricMembers.textContent = members.length;
-  els.metricSeats.textContent = `${seats} seats occupied`;
+  els.metricSeats.textContent = `${seats}/${capacity} seats utilized (${percentOf(seats, capacity)}%)`;
   els.metricDue.textContent = dueSoon;
   els.metricPending.textContent = members.filter((member) => !member.paid).length;
   els.metricOutstanding.textContent = `${fmt.format(pending)} outstanding`;
@@ -298,9 +351,11 @@ function renderMembers() {
 
   els.membersTable.innerHTML = filtered.length ? filtered.map((member) => {
     const state = paymentState(member);
+    const category = memberCategory(member);
     return `
       <tr>
         <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
+        <td><span class="category-label">${escapeHtml(category.label)}</span></td>
         <td><strong>${escapeHtml(member.plan)}</strong><span>${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}</span></td>
         <td>${formatDate(member.joiningDate)}</td>
         <td>${formatDate(member.renewalDate)}</td>
@@ -313,7 +368,7 @@ function renderMembers() {
         </td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="7">No members found.</td></tr>`;
+  }).join("") : `<tr><td colspan="8">No members found.</td></tr>`;
 }
 
 function renderSheetEditor() {
@@ -463,23 +518,24 @@ function renderReceipts() {
 }
 
 function renderLedger() {
-  const roomMembers = members.filter(isRoomMember);
-  const deskMembers = members.filter((member) => !isRoomMember(member));
+  const summaries = categorySummaries();
+  const roomSummary = summaries.find((summary) => summary.key === "rooms");
+  const deskSummaries = summaries.filter((summary) => summary.key !== "rooms");
   const collected = members.filter((member) => member.paid);
   const outstanding = members.filter((member) => !member.paid);
   const groups = [
-    ["Total room sales", roomMembers, roomMembers.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
-    ["Individual desk sales", deskMembers, deskMembers.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
-    ["Collected", collected, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
-    ["Outstanding", outstanding, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
-    ["Deposits held", members, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
+    ["Total room sales", `${roomSummary.occupied}/${roomSummary.capacity} capacity used (${roomSummary.utilization}%)`, roomSummary.revenue],
+    ["Individual desk sales", `${deskSummaries.reduce((sum, summary) => sum + summary.occupied, 0)}/${deskSummaries.reduce((sum, summary) => sum + summary.capacity, 0)} desk capacity used`, deskSummaries.reduce((sum, summary) => sum + summary.revenue, 0)],
+    ["Collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Outstanding", `${outstanding.length} pending record${outstanding.length === 1 ? "" : "s"}`, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Deposits held", `${members.length} active record${members.length === 1 ? "" : "s"}`, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
   ];
 
-  els.ledger.innerHTML = groups.map(([label, list, amount]) => `
+  els.ledger.innerHTML = groups.map(([label, detail, amount]) => `
     <div class="ledger-row">
       <div>
         <strong>${label}</strong>
-        <span>${list.length} record${list.length === 1 ? "" : "s"}</span>
+        <span>${detail}</span>
       </div>
       <strong>${fmt.format(amount)}</strong>
     </div>
@@ -505,20 +561,18 @@ function renderPlans() {
 }
 
 function renderBars() {
-  const revenueByPlan = plans.map((plan) => {
-    const amount = members
-      .filter((member) => member.plan === plan.name)
-      .reduce((sum, member) => sum + Number(member.monthlyFee), 0);
-    return { name: plan.name, amount };
-  }).filter((row) => row.amount > 0);
-  const max = Math.max(...revenueByPlan.map((row) => row.amount), 1);
+  const summaries = categorySummaries();
 
-  els.planBars.innerHTML = revenueByPlan.length ? revenueByPlan.map((row) => `
+  els.planBars.innerHTML = summaries.map((row) => `
     <div class="bar-row">
-      <div class="bar-label"><span>${row.name}</span><strong>${fmt.format(row.amount)}</strong></div>
-      <div class="bar-track"><div class="bar-fill" style="width: ${Math.max(8, Math.round((row.amount / max) * 100))}%"></div></div>
+      <div class="bar-label">
+        <span>${row.label}</span>
+        <strong>${row.occupied}/${row.capacity} | ${fmt.format(row.revenue)}</strong>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width: ${Math.min(100, Math.max(row.occupied ? 8 : 0, row.utilization))}%"></div></div>
+      <div class="bar-meta">${row.utilization}% utilization</div>
     </div>
-  `).join("") : `<p class="empty">No revenue yet.</p>`;
+  `).join("");
 }
 
 function stateLabel(state) {
@@ -756,12 +810,13 @@ function escapeAttr(value) {
 }
 
 function exportCsv() {
-  const headers = ["Name", "Company", "Phone", "Email", "Plan", "Seats", "Joining", "Renewal", "Standard Rate", "Offered Monthly Fee", "Discount", "Discount Reason", "Deposit", "Paid"];
+  const headers = ["Name", "Company", "Phone", "Email", "Category", "Plan", "Seats", "Joining", "Renewal", "Standard Rate", "Offered Monthly Fee", "Discount", "Discount Reason", "Deposit", "Paid"];
   const rows = members.map((member) => [
     member.name,
     member.company,
     member.phone,
     member.email,
+    memberCategory(member).label,
     member.plan,
     member.seats,
     member.joiningDate,
