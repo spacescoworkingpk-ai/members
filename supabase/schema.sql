@@ -141,10 +141,10 @@ for each row execute function public.set_updated_at();
 
 insert into public.plans (name, category, default_seats, standard_monthly_rate)
 values
-  ('Flexible Desk', 'individual', 1, 18000),
-  ('Dedicated Desk', 'individual', 1, 25000),
+  ('Flexible Desk', 'individual', 1, 15500),
+  ('Dedicated Desk', 'individual', 1, 17500),
   ('Dedicated Desk Plus', 'individual', 1, 32000),
-  ('Personal Desk', 'individual', 1, 38000),
+  ('Personal Desk', 'individual', 1, 20000),
   ('Room 01 - 05 persons', 'room', 5, 92500),
   ('Room 02 - 11 persons', 'room', 11, 203500),
   ('Room 03 - 7 persons', 'room', 7, 129500),

@@ -21,6 +21,27 @@ const deskCapacities = {
 
 const roomSeatRate = 18500;
 
+const quickServices = {
+  "day-pass": {
+    label: "Day Pass",
+    unitLabel: "No. of people",
+    unitName: "people",
+    rate: 1500
+  },
+  "weekly-pass": {
+    label: "Weekly Pass",
+    unitLabel: "No. of people",
+    unitName: "people",
+    rate: 5000
+  },
+  "conference-room": {
+    label: "Conference Room",
+    unitLabel: "No. of hours",
+    unitName: "hours",
+    rate: 1500
+  }
+};
+
 let plans = [];
 let members = [];
 let memberRecords = [];
@@ -66,6 +87,14 @@ const els = {
   resetMemberForm: document.querySelector("#resetMemberForm"),
   planSelect: document.querySelector("#planSelect"),
   rateSummary: document.querySelector("#rateSummary"),
+  quickInvoiceForm: document.querySelector("#quickInvoiceForm"),
+  quickService: document.querySelector("#quickService"),
+  quickQuantity: document.querySelector("#quickQuantity"),
+  quickQuantityLabel: document.querySelector("#quickQuantityLabel"),
+  quickRate: document.querySelector("#quickRate"),
+  quickTotal: document.querySelector("#quickTotal"),
+  quickInvoiceSummary: document.querySelector("#quickInvoiceSummary"),
+  resetQuickInvoice: document.querySelector("#resetQuickInvoice"),
   editInvoiceDialog: document.querySelector("#editInvoiceDialog"),
   editInvoiceForm: document.querySelector("#editInvoiceForm"),
   receiptDialog: document.querySelector("#receiptDialog"),
@@ -186,6 +215,7 @@ async function loadData() {
   renderPlans();
   setDefaultDates();
   syncPlanFields();
+  syncQuickInvoiceFields();
   render();
   setSyncStatus("Live", "ok");
 }
@@ -657,7 +687,7 @@ async function createInvoice(member, override = {}) {
   });
   await insertRow("invoice_items", {
     invoice_id: invoice.id,
-    description: member.plan,
+    description: override.description || member.plan,
     quantity: Number(override.seats ?? member.seats),
     unit_price: standardPrice,
     amount
@@ -668,15 +698,17 @@ async function createInvoice(member, override = {}) {
 function openInvoice(member, override = {}) {
   const invoiceId = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
   const { amount, tax, total, standardPrice, discount } = invoicePricing(member, override);
-  const invoiceTitle = override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership";
+  const invoiceTitle = override.title || (override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership");
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
   const validTill = override.validTill || member.renewalDate;
   const issuedDate = member.paidAt || isoToday();
+  const description = override.description || member.plan;
+  const quantity = Number(override.seats ?? member.seats);
   const message = [
     `Spaces Coworking ${statusLine.toLowerCase()} ${invoiceId}`,
-    `Member: ${member.name}`,
-    `Plan: ${member.plan}`,
+    `${override.mode === "quick" ? "Customer" : "Member"}: ${member.name}`,
+    `Service: ${description}`,
     discount ? `Standard rate: ${fmt.format(standardPrice)}` : "",
     discount ? `Discount: ${fmt.format(discount)}` : "",
     `Amount: ${fmt.format(total)}`,
@@ -687,6 +719,7 @@ function openInvoice(member, override = {}) {
 
   const noteRows = [
     member.company || "Membership",
+    override.note && !discount ? override.note : "",
     discount ? `Discount: ${fmt.format(discount)}${override.note ? ` - ${override.note}` : ""}` : "",
     `Valid till: ${formatDate(validTill)}`
   ].filter(Boolean);
@@ -731,8 +764,8 @@ function openInvoice(member, override = {}) {
         </thead>
         <tbody>
           <tr>
-            <td>${escapeHtml(member.plan)}</td>
-            <td>${String(override.seats ?? member.seats).padStart(2, "0")}</td>
+            <td>${escapeHtml(description)}</td>
+            <td>${String(quantity).padStart(2, "0")}</td>
             <td>${standardCell}</td>
             <td>${amountCell}</td>
           </tr>
@@ -881,6 +914,46 @@ function renderRateSummary() {
     : `<strong>Standard signup:</strong> Offered rate matches the selected plan.`;
 }
 
+function syncQuickInvoiceFields() {
+  const service = quickServices[els.quickService.value];
+  const quantity = Math.max(1, Number(els.quickQuantity.value || 1));
+  const total = service.rate * quantity;
+  els.quickQuantityLabel.textContent = service.unitLabel;
+  els.quickRate.value = service.rate;
+  els.quickTotal.value = total;
+  els.quickInvoiceSummary.innerHTML = `<strong>${service.label}:</strong> ${quantity} ${service.unitName} x ${fmt.format(service.rate)} = ${fmt.format(total)}.`;
+}
+
+function generateQuickInvoice() {
+  const data = new FormData(els.quickInvoiceForm);
+  const service = quickServices[data.get("service")];
+  const quantity = Math.max(1, Number(data.get("quantity") || 1));
+  const amount = service.rate * quantity;
+  const note = data.get("notes") || `${service.label} temporary billing`;
+  openInvoice({
+    id: `quick-${Date.now()}`,
+    name: data.get("name"),
+    phone: data.get("phone"),
+    company: "Walk-in / temporary receipt",
+    plan: service.label,
+    seats: quantity,
+    renewalDate: isoToday(),
+    monthlyFee: amount,
+    basePlanPrice: amount,
+    paidAt: isoToday()
+  }, {
+    mode: "quick",
+    title: "Spaces Temporary Receipt",
+    invoiceId: `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+    description: `${service.label} - ${quantity} ${service.unitName}`,
+    seats: quantity,
+    standardPrice: amount,
+    amount,
+    validTill: isoToday(),
+    note
+  });
+}
+
 async function createMemberFromForm() {
   const data = new FormData(els.memberForm);
   const selected = els.planSelect.options[els.planSelect.selectedIndex];
@@ -936,6 +1009,11 @@ els.logoutButton.addEventListener("click", () => {
 
 els.planSelect.addEventListener("change", syncPlanFields);
 els.memberForm.elements.monthlyFee.addEventListener("input", renderRateSummary);
+els.quickService.addEventListener("change", syncQuickInvoiceFields);
+els.quickQuantity.addEventListener("input", syncQuickInvoiceFields);
+els.resetQuickInvoice.addEventListener("click", () => {
+  window.setTimeout(syncQuickInvoiceFields, 0);
+});
 els.memberSearch.addEventListener("input", renderMembers);
 els.sheetSearch.addEventListener("input", renderSheetEditor);
 els.memberSheet.addEventListener("input", (event) => {
@@ -981,6 +1059,11 @@ els.memberForm.addEventListener("submit", async (event) => {
     alert(`Could not save member: ${error.message}`);
     setSyncStatus("Error", "error");
   }
+});
+
+els.quickInvoiceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  generateQuickInvoice();
 });
 
 els.editInvoiceForm.addEventListener("submit", async (event) => {
