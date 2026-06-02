@@ -15,6 +15,7 @@ const business = {
 
 let plans = [];
 let members = [];
+let memberRecords = [];
 let invoices = [];
 let payments = [];
 let session = loadSession();
@@ -48,6 +49,11 @@ const els = {
   planList: document.querySelector("#planList"),
   planBars: document.querySelector("#planBars"),
   memberSearch: document.querySelector("#memberSearch"),
+  sheetSearch: document.querySelector("#sheetSearch"),
+  memberSheet: document.querySelector("#memberSheet"),
+  sheetMessage: document.querySelector("#sheetMessage"),
+  refreshMembers: document.querySelector("#refreshMembers"),
+  saveAllSheetRows: document.querySelector("#saveAllSheetRows"),
   memberForm: document.querySelector("#memberForm"),
   resetMemberForm: document.querySelector("#resetMemberForm"),
   planSelect: document.querySelector("#planSelect"),
@@ -160,14 +166,15 @@ async function loadData() {
   setSyncStatus("Syncing", "busy");
   const [planRows, memberRows, invoiceRows, paymentRows] = await Promise.all([
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
-    selectRows("members", "select=*&status=eq.active&order=created_at.desc"),
+    selectRows("members", "select=*&order=created_at.desc"),
     selectRows("invoices", "select=*&order=created_at.desc"),
     selectRows("payments", "select=*&order=paid_at.desc")
   ]);
   plans = planRows.map(mapPlan);
   invoices = invoiceRows;
   payments = paymentRows;
-  members = memberRows.map(mapMember);
+  memberRecords = memberRows.map(mapMember);
+  members = memberRecords.filter((member) => member.status === "active");
   renderPlans();
   setDefaultDates();
   syncPlanFields();
@@ -207,6 +214,7 @@ function mapMember(row) {
     deposit: row.deposit_amount,
     discountReason: row.discount_reason,
     notes: row.notes,
+    status: row.status,
     paid: Boolean(paidInvoice),
     paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null
   };
@@ -247,6 +255,7 @@ function paymentState(member) {
 function render() {
   renderMetrics();
   renderMembers();
+  renderSheetEditor();
   renderReceipts();
   renderLedger();
   renderBars();
@@ -294,6 +303,132 @@ function renderMembers() {
       </tr>
     `;
   }).join("") : `<tr><td colspan="7">No members found.</td></tr>`;
+}
+
+function renderSheetEditor() {
+  const query = els.sheetSearch.value.trim().toLowerCase();
+  const filtered = memberRecords.filter((member) => {
+    const haystack = [
+      member.name,
+      member.company,
+      member.phone,
+      member.email,
+      member.plan,
+      member.discountReason,
+      member.notes,
+      member.status
+    ].join(" ").toLowerCase();
+    return haystack.includes(query);
+  });
+
+  els.memberSheet.innerHTML = filtered.length ? filtered.map((member) => `
+    <tr data-member-id="${member.id}">
+      <td><input required data-field="name" value="${escapeAttr(member.name)}"></td>
+      <td><input data-field="company" value="${escapeAttr(member.company)}"></td>
+      <td><input required data-field="phone" value="${escapeAttr(member.phone)}"></td>
+      <td><input data-field="email" type="email" value="${escapeAttr(member.email)}"></td>
+      <td>
+        <select required data-field="planId">
+          ${plans.map((plan) => `
+            <option value="${plan.id}" data-name="${escapeAttr(plan.name)}" data-seats="${plan.seats}" data-price="${plan.price}" ${plan.id === member.planId ? "selected" : ""}>${escapeHtml(plan.name)}</option>
+          `).join("")}
+        </select>
+      </td>
+      <td><input required data-field="seats" type="number" min="1" value="${Number(member.seats || 1)}"></td>
+      <td><input required data-field="joiningDate" type="date" value="${escapeAttr(member.joiningDate)}"></td>
+      <td><input required data-field="renewalDate" type="date" value="${escapeAttr(member.renewalDate)}"></td>
+      <td><input required data-field="basePlanPrice" type="number" min="0" step="500" value="${Number(member.basePlanPrice || 0)}"></td>
+      <td><input required data-field="monthlyFee" type="number" min="0" step="500" value="${Number(member.monthlyFee || 0)}"></td>
+      <td><input data-field="deposit" type="number" min="0" step="500" value="${Number(member.deposit || 0)}"></td>
+      <td><input data-field="discountReason" value="${escapeAttr(member.discountReason)}"></td>
+      <td><textarea data-field="notes" rows="1">${escapeHtml(member.notes)}</textarea></td>
+      <td>
+        <select data-field="status">
+          <option value="active" ${member.status === "active" ? "selected" : ""}>Active</option>
+          <option value="inactive" ${member.status === "inactive" ? "selected" : ""}>Inactive</option>
+        </select>
+      </td>
+      <td><button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button></td>
+    </tr>
+  `).join("") : `<tr><td colspan="15">No records found.</td></tr>`;
+  updateSheetMessage();
+}
+
+function markSheetRowDirty(row) {
+  row.classList.add("dirty");
+  updateSheetMessage();
+}
+
+function updateSheetMessage(message) {
+  if (message) {
+    els.sheetMessage.textContent = message;
+    return;
+  }
+  const dirtyCount = els.memberSheet.querySelectorAll("tr.dirty").length;
+  els.sheetMessage.textContent = dirtyCount
+    ? `${dirtyCount} unsaved row${dirtyCount === 1 ? "" : "s"}`
+    : "No pending edits";
+}
+
+async function saveSheetRow(id) {
+  const row = els.memberSheet.querySelector(`tr[data-member-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  const planSelect = row.querySelector('[data-field="planId"]');
+  const selectedPlan = plans.find((plan) => plan.id === planSelect.value);
+  const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
+
+  await patchRow("members", id, {
+    full_name: value("name"),
+    company: value("company") || null,
+    phone: value("phone"),
+    email: value("email") || null,
+    plan_id: selectedPlan?.id || null,
+    plan_name: selectedPlan?.name || planSelect.selectedOptions[0]?.dataset.name || value("plan"),
+    seats: Number(value("seats") || 1),
+    joining_date: value("joiningDate"),
+    renewal_date: value("renewalDate"),
+    standard_monthly_rate: Number(value("basePlanPrice") || 0),
+    offered_monthly_rate: Number(value("monthlyFee") || 0),
+    deposit_amount: Number(value("deposit") || 0),
+    discount_reason: value("discountReason") || null,
+    notes: value("notes") || null,
+    status: value("status") || "active"
+  });
+}
+
+async function saveChangedSheetRows() {
+  const changedRows = [...els.memberSheet.querySelectorAll("tr.dirty")];
+  if (!changedRows.length) {
+    updateSheetMessage("No changes to save");
+    return;
+  }
+  try {
+    setSyncStatus("Saving", "busy");
+    updateSheetMessage(`Saving ${changedRows.length} row${changedRows.length === 1 ? "" : "s"}...`);
+    for (const row of changedRows) {
+      await saveSheetRow(row.dataset.memberId);
+    }
+    await loadData();
+    updateSheetMessage("Saved");
+  } catch (error) {
+    alert(`Could not save sheet changes: ${error.message}`);
+    setSyncStatus("Error", "error");
+    updateSheetMessage("Save failed");
+  }
+}
+
+async function saveChangedSheetRowsFor(id) {
+  try {
+    setSyncStatus("Saving", "busy");
+    updateSheetMessage("Saving row...");
+    await saveSheetRow(id);
+    await loadData();
+    updateSheetMessage("Saved");
+  } catch (error) {
+    alert(`Could not save member row: ${error.message}`);
+    setSyncStatus("Error", "error");
+    updateSheetMessage("Save failed");
+  }
 }
 
 function renderReceipts() {
@@ -601,6 +736,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 function exportCsv() {
   const headers = ["Name", "Company", "Phone", "Email", "Plan", "Seats", "Joining", "Renewal", "Standard Rate", "Offered Monthly Fee", "Discount", "Discount Reason", "Deposit", "Paid"];
   const rows = members.map((member) => [
@@ -683,6 +822,10 @@ async function createMemberFromForm() {
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
+  if (button.dataset.action === "save-member-row") {
+    saveChangedSheetRowsFor(button.dataset.id);
+    return;
+  }
   const member = members.find((item) => item.id === button.dataset.id);
   if (!member) return;
   if (button.dataset.action === "paid") markPaid(member.id);
@@ -710,6 +853,27 @@ els.logoutButton.addEventListener("click", () => {
 els.planSelect.addEventListener("change", syncPlanFields);
 els.memberForm.elements.monthlyFee.addEventListener("input", renderRateSummary);
 els.memberSearch.addEventListener("input", renderMembers);
+els.sheetSearch.addEventListener("input", renderSheetEditor);
+els.memberSheet.addEventListener("input", (event) => {
+  const row = event.target.closest("tr[data-member-id]");
+  if (row) markSheetRowDirty(row);
+});
+els.memberSheet.addEventListener("change", (event) => {
+  const row = event.target.closest("tr[data-member-id]");
+  if (!row) return;
+  if (event.target.dataset.field === "planId") {
+    const selected = event.target.selectedOptions[0];
+    row.querySelector('[data-field="seats"]').value = selected.dataset.seats;
+    row.querySelector('[data-field="basePlanPrice"]').value = selected.dataset.price;
+    row.querySelector('[data-field="monthlyFee"]').value = selected.dataset.price;
+  }
+  markSheetRowDirty(row);
+});
+els.saveAllSheetRows.addEventListener("click", saveChangedSheetRows);
+els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
+  alert(`Could not refresh members: ${error.message}`);
+  setSyncStatus("Error", "error");
+}));
 els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());

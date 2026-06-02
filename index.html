@@ -32,6 +32,7 @@
           <a href="#dashboard" class="active">Dashboard</a>
           <a href="#member-form">Member Form</a>
           <a href="#members">Members</a>
+          <a href="#member-sheet">Sheet Editor</a>
           <a href="#receipts">Receipts</a>
           <a href="#accounting">Accounting</a>
           <a href="#plans">Plans</a>
@@ -126,6 +127,50 @@
               <button class="primary-button" type="submit">Save member</button>
             </div>
           </form>
+        </section>
+
+        <section class="panel sheet-panel" id="member-sheet">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Spreadsheet editor</p>
+              <h2>Edit member records</h2>
+            </div>
+            <div class="sheet-actions">
+              <button class="ghost-button" id="refreshMembers" type="button">Refresh</button>
+              <button class="primary-button" id="saveAllSheetRows" type="button">Save changes</button>
+            </div>
+          </div>
+          <div class="sheet-toolbar">
+            <label class="search">
+              <span>Filter sheet</span>
+              <input id="sheetSearch" type="search" placeholder="Name, phone, plan, notes">
+            </label>
+            <span class="sheet-message" id="sheetMessage">No pending edits</span>
+          </div>
+          <div class="sheet-wrap">
+            <table class="sheet-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Plan</th>
+                  <th>Seats</th>
+                  <th>Joining</th>
+                  <th>Renewal</th>
+                  <th>Standard</th>
+                  <th>Offered</th>
+                  <th>Deposit</th>
+                  <th>Discount reason</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Save</th>
+                </tr>
+              </thead>
+              <tbody id="memberSheet"></tbody>
+            </table>
+          </div>
         </section>
 
         <section class="content-grid" id="members">
