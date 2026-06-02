@@ -186,6 +186,7 @@ function mapPlan(row) {
   return {
     id: row.id,
     name: row.name,
+    category: row.category,
     type: row.category === "room" ? "Room" : "Individual",
     seats: row.default_seats,
     price: row.standard_monthly_rate
@@ -193,6 +194,7 @@ function mapPlan(row) {
 }
 
 function mapMember(row) {
+  const plan = plans.find((item) => item.id === row.plan_id || item.name === row.plan_name);
   const memberInvoices = invoices.filter((invoice) => invoice.member_id === row.id);
   const paidInvoice = memberInvoices.find((invoice) => invoice.status === "paid");
   const paidPayment = paidInvoice
@@ -206,6 +208,7 @@ function mapMember(row) {
     email: row.email,
     planId: row.plan_id,
     plan: row.plan_name,
+    planCategory: plan?.category || inferPlanCategory(row.plan_name),
     seats: row.seats,
     joiningDate: row.joining_date,
     renewalDate: row.renewal_date,
@@ -250,6 +253,14 @@ function paymentState(member) {
   const days = daysUntil(member.renewalDate);
   if (days <= 7) return "due";
   return "unpaid";
+}
+
+function inferPlanCategory(planName) {
+  return /room|cubicle|executive/i.test(planName || "") ? "room" : "individual";
+}
+
+function isRoomMember(member) {
+  return member.planCategory === "room" || inferPlanCategory(member.plan) === "room";
 }
 
 function render() {
@@ -452,9 +463,13 @@ function renderReceipts() {
 }
 
 function renderLedger() {
+  const roomMembers = members.filter(isRoomMember);
+  const deskMembers = members.filter((member) => !isRoomMember(member));
   const collected = members.filter((member) => member.paid);
   const outstanding = members.filter((member) => !member.paid);
   const groups = [
+    ["Total room sales", roomMembers, roomMembers.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Individual desk sales", deskMembers, deskMembers.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
     ["Collected", collected, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
     ["Outstanding", outstanding, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
     ["Deposits held", members, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
@@ -477,7 +492,7 @@ function renderPlans() {
       <header>
         <div>
           <strong>${plan.name}</strong>
-          <span>${plan.type} | ${plan.seats} seat${plan.seats === 1 ? "" : "s"}</span>
+          <span>${plan.type} | ${plan.seats} person${plan.seats === 1 ? "" : "s"}</span>
         </div>
         <strong>${fmt.format(plan.price)}</strong>
       </header>

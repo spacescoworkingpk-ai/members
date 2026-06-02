@@ -145,18 +145,23 @@ values
   ('Dedicated Desk', 'individual', 1, 25000),
   ('Dedicated Desk Plus', 'individual', 1, 32000),
   ('Personal Desk', 'individual', 1, 38000),
-  ('Cubicle', 'room', 4, 85000),
-  ('Room 5', 'room', 5, 120000),
-  ('Room 7', 'room', 7, 160000),
-  ('Room 7 Plus', 'room', 7, 175000),
-  ('Room 11', 'room', 11, 240000),
-  ('Executive / Manager Room', 'room', 1, 210000)
+  ('Room 01 - 05 persons', 'room', 5, 120000),
+  ('Room 02 - 11 persons', 'room', 11, 240000),
+  ('Room 03 - 7 persons', 'room', 7, 160000),
+  ('Room 04 - 7 persons', 'room', 7, 175000),
+  ('Cubicle - 4 persons', 'room', 4, 85000),
+  ('Executive Room', 'room', 1, 210000)
 on conflict (name) do update set
   category = excluded.category,
   default_seats = excluded.default_seats,
   standard_monthly_rate = excluded.standard_monthly_rate,
   active = true,
   updated_at = now();
+
+update public.plans
+set active = false,
+    updated_at = now()
+where name in ('Cubicle', 'Room 5', 'Room 7', 'Room 7 Plus', 'Room 11', 'Executive / Manager Room');
 
 alter table public.staff_profiles enable row level security;
 alter table public.plans enable row level security;
