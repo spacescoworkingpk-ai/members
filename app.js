@@ -451,10 +451,31 @@ function renderMembers() {
     return haystack.includes(query);
   });
 
-  els.membersTable.innerHTML = filtered.length ? filtered.map((member) => {
-    const state = paymentState(member);
-    const category = memberCategory(member);
+  const groups = [
+    { key: "rooms", label: "Rooms", detail: "Private rooms, cubicle, executive room" },
+    { key: "flexible", label: "Desks - Flexible Desk", detail: "Flexible desk members" },
+    { key: "dedicated", label: "Desks - Dedicated Desk", detail: "Dedicated desk members" },
+    { key: "personal", label: "Desks - Personal Desk", detail: "Personal desk members" }
+  ];
+
+  const rows = groups.map((group) => {
+    const groupMembers = filtered
+      .filter((member) => memberCategory(member).key === group.key)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!groupMembers.length) return "";
+    const occupied = groupMembers.reduce((sum, member) => sum + Number(member.seats || 0), 0);
+    const revenue = groupMembers.reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0);
     return `
+      <tr class="member-group-row">
+        <td colspan="8">
+          <strong>${escapeHtml(group.label)}</strong>
+          <span>${groupMembers.length} member${groupMembers.length === 1 ? "" : "s"} | ${occupied} seat${occupied === 1 ? "" : "s"} | ${fmt.format(revenue)}</span>
+        </td>
+      </tr>
+      ${groupMembers.map((member) => {
+        const state = paymentState(member);
+        const category = memberCategory(member);
+        return `
       <tr>
         <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
         <td><span class="category-label">${escapeHtml(category.label)}</span></td>
@@ -470,7 +491,11 @@ function renderMembers() {
         </td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="8">No members found.</td></tr>`;
+      }).join("")}
+    `;
+  }).join("");
+
+  els.membersTable.innerHTML = rows || `<tr><td colspan="8">No members found.</td></tr>`;
 }
 
 function renderSheetEditor() {
@@ -600,15 +625,32 @@ async function saveChangedSheetRowsFor(id) {
 }
 
 function renderReceipts() {
-  const queue = members.filter((member) => !member.paid);
-  els.receiptQueue.innerHTML = queue.length ? queue.map((member) => `
+  const queue = members
+    .filter((member) => !member.paid)
+    .sort((a, b) => daysUntil(a.validTill) - daysUntil(b.validTill) || a.name.localeCompare(b.name));
+  const groups = [
+    { label: "Overdue", members: queue.filter((member) => daysUntil(member.validTill) < 0) },
+    { label: "Due soon", members: queue.filter((member) => daysUntil(member.validTill) >= 0 && daysUntil(member.validTill) <= 7) },
+    { label: "Upcoming", members: queue.filter((member) => daysUntil(member.validTill) > 7) }
+  ].filter((group) => group.members.length);
+
+  els.receiptQueue.innerHTML = groups.length ? groups.map((group) => `
+    <div class="queue-group">
+      <div class="queue-group-title">${group.label}</div>
+      ${group.members.map((member) => {
+        const days = daysUntil(member.validTill);
+        const dueLabel = days < 0 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue` : `${days} day${days === 1 ? "" : "s"} left`;
+        return `
     <article class="queue-item">
       <header>
         <div>
           <strong>${escapeHtml(member.name)}</strong>
           <span>${escapeHtml(member.plan)} | Valid till ${formatDate(member.validTill)}</span>
         </div>
-        <strong>${fmt.format(Number(member.monthlyFee))}</strong>
+        <div class="queue-amount">
+          <strong>${fmt.format(Number(member.monthlyFee))}</strong>
+          <span>${dueLabel}</span>
+        </div>
       </header>
       <div class="queue-actions">
         <button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>
@@ -616,6 +658,9 @@ function renderReceipts() {
         <button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edited invoice</button>
       </div>
     </article>
+        `;
+      }).join("")}
+    </div>
   `).join("") : `<p class="empty">All visible invoices are paid.</p>`;
 }
 

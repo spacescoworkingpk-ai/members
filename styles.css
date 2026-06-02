@@ -454,6 +454,11 @@ h2 {
   margin-bottom: 18px;
 }
 
+.quick-invoice-panel {
+  border-color: #b9ddea;
+  background: linear-gradient(180deg, #ffffff, #f6fbfd);
+}
+
 .sheet-panel {
   margin-bottom: 18px;
 }
@@ -676,6 +681,30 @@ th {
   text-transform: uppercase;
 }
 
+.member-group-row td {
+  padding: 14px 10px;
+  background: #f3f7f8;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.member-group-row strong,
+.member-group-row span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.member-group-row strong {
+  margin-right: 10px;
+  color: var(--ink);
+}
+
+.member-group-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 td strong,
 td span {
   display: block;
@@ -733,6 +762,22 @@ td span {
   margin-top: 16px;
 }
 
+.queue-group {
+  display: grid;
+  gap: 8px;
+}
+
+.queue-group + .queue-group {
+  margin-top: 10px;
+}
+
+.queue-group-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .queue-item,
 .ledger-row,
 .plan-card {
@@ -764,6 +809,17 @@ td span {
 .plan-card span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.queue-amount {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+}
+
+.queue-amount span {
+  color: var(--red);
+  font-weight: 850;
 }
 
 .queue-actions {
@@ -1113,7 +1169,7 @@ label textarea {
 
 @media (max-width: 760px) {
   main {
-    padding: 18px;
+    padding: 14px;
   }
 
   .topbar,
@@ -1132,7 +1188,8 @@ label textarea {
   }
 
   .primary-button,
-  .ghost-button {
+  .ghost-button,
+  .tiny-button {
     width: 100%;
   }
 
@@ -1148,7 +1205,156 @@ label textarea {
   }
 
   .sidebar {
-    padding: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 12px;
+    gap: 12px;
+    background: #18231f;
+  }
+
+  .brand {
+    min-width: 132px;
+  }
+
+  nav a {
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .metric,
+  .panel,
+  .insight-panel {
+    padding: 14px;
+  }
+
+  .metric strong {
+    font-size: 22px;
+  }
+
+  .visual-panel {
+    display: none;
+  }
+
+  .quick-invoice-panel {
+    border-color: #9fd2e5;
+    box-shadow: 0 12px 28px rgba(0, 143, 208, 0.1);
+  }
+
+  label input,
+  label select,
+  .search input {
+    min-height: 46px;
+    font-size: 16px;
+  }
+
+  label textarea {
+    font-size: 16px;
+  }
+
+  .member-table {
+    min-width: 0;
+  }
+
+  .member-table thead {
+    display: none;
+  }
+
+  .member-table,
+  .member-table tbody,
+  .member-table tr,
+  .member-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .member-table tr {
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  .member-table td {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eef1ee;
+    font-size: 13px;
+  }
+
+  .member-table td::before {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(1)::before {
+    content: "Member";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(2)::before {
+    content: "Category";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(3)::before {
+    content: "Plan";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(4)::before {
+    content: "Joining";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(5)::before {
+    content: "Valid";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(6)::before {
+    content: "Fee";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(7)::before {
+    content: "Status";
+  }
+
+  .member-table tr:not(.member-group-row) td:nth-child(8)::before {
+    content: "Action";
+  }
+
+  .member-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .member-group-row {
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .member-group-row td {
+    display: block;
+    padding: 12px;
+    border-radius: 8px;
+    background: #eaf4f7;
+  }
+
+  .member-group-row td::before {
+    content: none;
+  }
+
+  .member-table td:last-child .tiny-button {
+    margin: 4px 0;
+  }
+
+  .queue-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .queue-amount {
+    text-align: left;
   }
 
   dialog {

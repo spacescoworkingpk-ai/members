@@ -54,6 +54,7 @@
             <span class="sync-status" id="syncStatus">Connecting</span>
             <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
             <button class="ghost-button" id="logoutButton" type="button">Logout</button>
+            <a class="ghost-button" href="#quick-invoice">Quick invoice</a>
             <a class="primary-button" href="#member-form">Add member</a>
           </div>
         </header>
@@ -96,6 +97,38 @@
             </div>
             <div class="bars" id="planBars"></div>
           </div>
+        </section>
+
+        <section class="panel member-form-panel quick-invoice-panel" id="quick-invoice">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Temporary billing</p>
+              <h2>Day pass, weekly pass, and conference room receipt</h2>
+            </div>
+            <span class="form-hint">For one-time customers without adding a member record.</span>
+          </div>
+          <form id="quickInvoiceForm" class="staff-form">
+            <div class="form-grid">
+              <label>Name<input required name="name" placeholder="Customer name"></label>
+              <label>Contact number<input required name="phone" placeholder="923001234567"></label>
+              <label>Service
+                <select required name="service" id="quickService">
+                  <option value="day-pass">Day Pass</option>
+                  <option value="weekly-pass">Weekly Pass</option>
+                  <option value="conference-room">Conference Room</option>
+                </select>
+              </label>
+              <label><span id="quickQuantityLabel">No. of people</span><input required name="quantity" id="quickQuantity" type="number" min="1" value="1"></label>
+              <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
+              <label>Total<input readonly name="total" id="quickTotal" type="number"></label>
+              <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>
+            </div>
+            <div class="rate-summary" id="quickInvoiceSummary"></div>
+            <div class="modal-actions inline-actions">
+              <button class="ghost-button" type="reset" id="resetQuickInvoice">Clear</button>
+              <button class="primary-button" type="submit">Generate receipt</button>
+            </div>
+          </form>
         </section>
 
         <section class="panel member-form-panel" id="member-form">
@@ -187,7 +220,7 @@
               </label>
             </div>
             <div class="table-wrap">
-              <table>
+              <table class="member-table">
                 <thead>
                   <tr>
                     <th>Member</th>
@@ -212,38 +245,6 @@
             </div>
             <div id="receiptQueue" class="receipt-list"></div>
           </div>
-        </section>
-
-        <section class="panel member-form-panel" id="quick-invoice">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Temporary billing</p>
-              <h2>Day pass, weekly pass, and conference room receipt</h2>
-            </div>
-            <span class="form-hint">For one-time customers without adding a member record.</span>
-          </div>
-          <form id="quickInvoiceForm" class="staff-form">
-            <div class="form-grid">
-              <label>Name<input required name="name" placeholder="Customer name"></label>
-              <label>Contact number<input required name="phone" placeholder="923001234567"></label>
-              <label>Service
-                <select required name="service" id="quickService">
-                  <option value="day-pass">Day Pass</option>
-                  <option value="weekly-pass">Weekly Pass</option>
-                  <option value="conference-room">Conference Room</option>
-                </select>
-              </label>
-              <label><span id="quickQuantityLabel">No. of people</span><input required name="quantity" id="quickQuantity" type="number" min="1" value="1"></label>
-              <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
-              <label>Total<input readonly name="total" id="quickTotal" type="number"></label>
-              <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>
-            </div>
-            <div class="rate-summary" id="quickInvoiceSummary"></div>
-            <div class="modal-actions inline-actions">
-              <button class="ghost-button" type="reset" id="resetQuickInvoice">Clear</button>
-              <button class="primary-button" type="submit">Generate receipt</button>
-            </div>
-          </form>
         </section>
 
         <section class="content-grid" id="accounting">
