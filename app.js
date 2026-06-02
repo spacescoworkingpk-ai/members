@@ -105,6 +105,7 @@ const els = {
   whatsappReceipt: document.querySelector("#whatsappReceipt"),
   closeReceipt: document.querySelector("#closeReceipt"),
   printReceipt: document.querySelector("#printReceipt"),
+  downloadReceipt: document.querySelector("#downloadReceipt"),
   exportCsv: document.querySelector("#exportCsv")
 };
 
@@ -236,11 +237,13 @@ function mapPlan(row) {
 
 function mapMember(row) {
   const plan = plans.find((item) => item.id === row.plan_id || item.name === row.plan_name);
+  const cycle = membershipCycle(row);
   const memberInvoices = invoices.filter((invoice) => invoice.member_id === row.id);
-  const paidInvoice = memberInvoices.find((invoice) => invoice.status === "paid");
+  const paidInvoice = memberInvoices.find((invoice) => invoice.status === "paid" && invoice.valid_till === cycle.validTill);
   const paidPayment = paidInvoice
     ? payments.find((payment) => payment.invoice_id === paidInvoice.id)
     : null;
+  const previousUnpaidInvoices = memberInvoices.filter((invoice) => invoice.status !== "paid" && invoice.valid_till < cycle.validTill);
   return {
     id: row.id,
     name: row.full_name,
@@ -253,6 +256,8 @@ function mapMember(row) {
     seats: row.seats,
     joiningDate: row.joining_date,
     renewalDate: row.renewal_date,
+    membershipFrom: cycle.from,
+    validTill: cycle.validTill,
     basePlanPrice: row.standard_monthly_rate,
     monthlyFee: row.offered_monthly_rate,
     deposit: row.deposit_amount,
@@ -260,7 +265,9 @@ function mapMember(row) {
     notes: row.notes,
     status: row.status,
     paid: Boolean(paidInvoice),
-    paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null
+    paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null,
+    previousUnpaidAmount: previousUnpaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0),
+    previousUnpaidCount: previousUnpaidInvoices.length
   };
 }
 
@@ -294,6 +301,16 @@ function addHours(date, hours) {
   return next;
 }
 
+function addMonthsClamped(date, months) {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDay));
+  return next;
+}
+
 function isoDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -318,9 +335,29 @@ function daysUntil(dateString) {
   return Math.ceil((target - today) / 86400000);
 }
 
+function dateInMonthByJoiningDay(year, monthIndex, joiningDay) {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(joiningDay, lastDay));
+}
+
+function membershipCycle(memberOrRow, referenceDate = new Date()) {
+  const joiningDate = memberOrRow.joiningDate || memberOrRow.joining_date;
+  if (!joiningDate) {
+    const today = isoDate(referenceDate);
+    return { from: today, validTill: today };
+  }
+  const joining = new Date(`${joiningDate}T00:00:00`);
+  const fromDate = dateInMonthByJoiningDay(referenceDate.getFullYear(), referenceDate.getMonth(), joining.getDate());
+  const validTillDate = addMonthsClamped(fromDate, 1);
+  return {
+    from: isoDate(fromDate),
+    validTill: isoDate(validTillDate)
+  };
+}
+
 function paymentState(member) {
   if (member.paid) return "paid";
-  const days = daysUntil(member.renewalDate);
+  const days = daysUntil(member.validTill);
   if (days <= 7) return "due";
   return "unpaid";
 }
@@ -391,8 +428,9 @@ function render() {
 function renderMetrics() {
   const total = members.reduce((sum, member) => sum + Number(member.monthlyFee), 0);
   const collected = members.filter((member) => member.paid).reduce((sum, member) => sum + Number(member.monthlyFee), 0);
-  const pending = total - collected;
-  const dueSoon = members.filter((member) => !member.paid && daysUntil(member.renewalDate) <= 7).length;
+  const previousUnpaid = members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
+  const pending = total - collected + previousUnpaid;
+  const dueSoon = members.filter((member) => !member.paid && daysUntil(member.validTill) <= 7).length;
   const seats = members.reduce((sum, member) => sum + Number(member.seats), 0);
   const capacity = capacityForCategory("rooms") + deskCapacities.flexible + deskCapacities.dedicated + deskCapacities.personal;
   const percentage = total ? Math.round((collected / total) * 100) : 0;
@@ -402,7 +440,7 @@ function renderMetrics() {
   els.metricMembers.textContent = members.length;
   els.metricSeats.textContent = `${seats}/${capacity} seats utilized (${percentOf(seats, capacity)}%)`;
   els.metricDue.textContent = dueSoon;
-  els.metricPending.textContent = members.filter((member) => !member.paid).length;
+  els.metricPending.textContent = members.filter((member) => !member.paid).length + members.reduce((sum, member) => sum + Number(member.previousUnpaidCount || 0), 0);
   els.metricOutstanding.textContent = `${fmt.format(pending)} outstanding`;
 }
 
@@ -422,7 +460,7 @@ function renderMembers() {
         <td><span class="category-label">${escapeHtml(category.label)}</span></td>
         <td><strong>${escapeHtml(member.plan)}</strong><span>${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}</span></td>
         <td>${formatDate(member.joiningDate)}</td>
-        <td>${formatDate(member.renewalDate)}</td>
+        <td>${formatDate(member.validTill)}</td>
         <td>${rateLabel(member)}</td>
         <td><span class="status ${state}">${stateLabel(state)}</span></td>
         <td>
@@ -568,7 +606,7 @@ function renderReceipts() {
       <header>
         <div>
           <strong>${escapeHtml(member.name)}</strong>
-          <span>${escapeHtml(member.plan)} | Renewal ${formatDate(member.renewalDate)}</span>
+          <span>${escapeHtml(member.plan)} | Valid till ${formatDate(member.validTill)}</span>
         </div>
         <strong>${fmt.format(Number(member.monthlyFee))}</strong>
       </header>
@@ -587,11 +625,14 @@ function renderLedger() {
   const deskSummaries = summaries.filter((summary) => summary.key !== "rooms");
   const collected = members.filter((member) => member.paid);
   const outstanding = members.filter((member) => !member.paid);
+  const previousUnpaidAmount = members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
+  const previousUnpaidCount = members.reduce((sum, member) => sum + Number(member.previousUnpaidCount || 0), 0);
   const groups = [
     ["Total room sales", `${roomSummary.occupied}/${roomSummary.capacity} capacity used (${roomSummary.utilization}%)`, roomSummary.revenue],
     ["Individual desk sales", `${deskSummaries.reduce((sum, summary) => sum + summary.occupied, 0)}/${deskSummaries.reduce((sum, summary) => sum + summary.capacity, 0)} desk capacity used`, deskSummaries.reduce((sum, summary) => sum + summary.revenue, 0)],
     ["Collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
     ["Outstanding", `${outstanding.length} pending record${outstanding.length === 1 ? "" : "s"}`, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Previous unpaid", `${previousUnpaidCount} older invoice${previousUnpaidCount === 1 ? "" : "s"} unpaid`, previousUnpaidAmount],
     ["Deposits held", `${members.length} active record${members.length === 1 ? "" : "s"}`, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
   ];
 
@@ -665,22 +706,16 @@ function invoicePricing(member, override = {}) {
   return { amount, tax, total: amount + tax, standardPrice, discount };
 }
 
-function monthBefore(dateString) {
-  const date = new Date(`${dateString}T00:00:00`);
-  date.setMonth(date.getMonth() - 1);
-  return isoDate(date);
-}
-
 function receiptDateFor(member, override = {}) {
   if (override.receiptDate) return override.receiptDate;
   if (override.mode === "quick") return isoToday();
-  if (member.renewalDate) return monthBefore(member.renewalDate);
+  if (member.membershipFrom) return member.membershipFrom;
   return member.paidAt || isoToday();
 }
 
 function validityLabel(member, override = {}) {
   if (override.validityText) return override.validityText;
-  const validTill = override.validTill || member.renewalDate;
+  const validTill = override.validTill || member.validTill || member.renewalDate;
   if (override.mode === "quick") return `Service Valid Till ${formatDate(validTill)}`;
   return `Membership Valid Till ${formatDate(validTill)}`;
 }
@@ -702,7 +737,8 @@ async function markPaid(id) {
       mode: "receipt",
       status: "paid",
       amount: member.monthlyFee,
-      validTill: member.renewalDate
+      receiptDate: member.membershipFrom,
+      validTill: member.validTill
     });
     await insertRow("payments", {
       invoice_id: invoice.id,
@@ -727,8 +763,8 @@ async function createInvoice(member, override = {}) {
     invoice_number: invoiceNumber,
     member_id: member.id,
     invoice_type: override.mode === "edited" ? "edited" : "membership",
-    issue_date: isoToday(),
-    valid_till: override.validTill || member.renewalDate,
+    issue_date: override.receiptDate || isoToday(),
+    valid_till: override.validTill || member.validTill || member.renewalDate,
     standard_amount: standardPrice,
     discount_amount: discount,
     subtotal_amount: amount,
@@ -885,7 +921,7 @@ function openEditedInvoiceForm(member) {
   els.editInvoiceForm.elements.seats.value = member.seats;
   els.editInvoiceForm.elements.standardPrice.value = billingStandardForMember(member) || member.monthlyFee;
   els.editInvoiceForm.elements.invoiceAmount.value = member.monthlyFee;
-  els.editInvoiceForm.elements.validTill.value = member.renewalDate;
+  els.editInvoiceForm.elements.validTill.value = member.validTill || member.renewalDate;
   els.editInvoiceDialog.showModal();
 }
 
@@ -1114,6 +1150,7 @@ els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
 }));
 els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
+els.downloadReceipt.addEventListener("click", () => window.print());
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 els.resetMemberForm.addEventListener("click", () => {
   window.setTimeout(() => {
@@ -1154,6 +1191,7 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
     seats: Number(data.get("seats")),
     standardPrice: Number(data.get("standardPrice")),
     amount: Number(data.get("invoiceAmount")),
+    receiptDate: member.membershipFrom,
     validTill: data.get("validTill"),
     note: data.get("editNote")
   };
