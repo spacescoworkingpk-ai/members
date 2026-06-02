@@ -26,19 +26,22 @@ const quickServices = {
     label: "Day Pass",
     unitLabel: "No. of people",
     unitName: "people",
-    rate: 1500
+    rate: 1500,
+    validity: "day"
   },
   "weekly-pass": {
     label: "Weekly Pass",
     unitLabel: "No. of people",
     unitName: "people",
-    rate: 5000
+    rate: 5000,
+    validity: "week"
   },
   "conference-room": {
     label: "Conference Room",
     unitLabel: "No. of hours",
     unitName: "hours",
-    rate: 1500
+    rate: 1500,
+    validity: "hours"
   }
 };
 
@@ -276,7 +279,36 @@ function formatDate(dateString) {
 }
 
 function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+  return isoDate(new Date());
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addHours(date, hours) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + hours);
+  return next;
+}
+
+function isoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateTime(date) {
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function daysUntil(dateString) {
@@ -633,6 +665,26 @@ function invoicePricing(member, override = {}) {
   return { amount, tax, total: amount + tax, standardPrice, discount };
 }
 
+function monthBefore(dateString) {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setMonth(date.getMonth() - 1);
+  return isoDate(date);
+}
+
+function receiptDateFor(member, override = {}) {
+  if (override.receiptDate) return override.receiptDate;
+  if (override.mode === "quick") return isoToday();
+  if (member.renewalDate) return monthBefore(member.renewalDate);
+  return member.paidAt || isoToday();
+}
+
+function validityLabel(member, override = {}) {
+  if (override.validityText) return override.validityText;
+  const validTill = override.validTill || member.renewalDate;
+  if (override.mode === "quick") return `Service Valid Till ${formatDate(validTill)}`;
+  return `Membership Valid Till ${formatDate(validTill)}`;
+}
+
 function rateLabel(member) {
   const basePrice = billingStandardForMember(member);
   const monthlyFee = Number(member.monthlyFee);
@@ -701,8 +753,8 @@ function openInvoice(member, override = {}) {
   const invoiceTitle = override.title || (override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership");
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
-  const validTill = override.validTill || member.renewalDate;
-  const issuedDate = member.paidAt || isoToday();
+  const issuedDate = receiptDateFor(member, override);
+  const validText = validityLabel(member, override);
   const description = override.description || member.plan;
   const quantity = Number(override.seats ?? member.seats);
   const message = [
@@ -712,16 +764,14 @@ function openInvoice(member, override = {}) {
     discount ? `Standard rate: ${fmt.format(standardPrice)}` : "",
     discount ? `Discount: ${fmt.format(discount)}` : "",
     `Amount: ${fmt.format(total)}`,
-    `Valid till: ${formatDate(validTill)}`,
+    validText,
     override.note ? `Note: ${override.note}` : "",
     "Thank you."
   ].filter(Boolean).join("\n");
 
   const noteRows = [
-    member.company || "Membership",
     override.note && !discount ? override.note : "",
-    discount ? `Discount: ${fmt.format(discount)}${override.note ? ` - ${override.note}` : ""}` : "",
-    `Valid till: ${formatDate(validTill)}`
+    discount ? `Discount: ${fmt.format(discount)}${override.note ? ` - ${override.note}` : ""}` : ""
   ].filter(Boolean);
 
   const amountCell = amount.toLocaleString("en-PK");
@@ -738,7 +788,7 @@ function openInvoice(member, override = {}) {
               <span>This ${override.mode === "edited" ? "invoice" : "receipt"} is addressed to:</span>
               <span><strong>Name:</strong> ${escapeHtml(member.name)}</span>
               <span><strong>Contact:</strong> ${escapeHtml(member.phone)}</span>
-              <span><strong>Date:</strong> ${formatDate(issuedDate)}</span>
+              <span><strong>${override.mode === "quick" ? "Receipt Date" : "Membership From"}:</strong> ${formatDate(issuedDate)}</span>
             </div>
           </div>
         </div>
@@ -807,7 +857,7 @@ function openInvoice(member, override = {}) {
 
       <footer class="receipt-footer">
         <div>
-          <div class="signature-line">Valid Till ${formatDate(validTill)}</div>
+          <div class="signature-line">${escapeHtml(validText)}</div>
           <div class="representative">Spaces Representative</div>
         </div>
         <div class="receipt-thanks">
@@ -924,12 +974,38 @@ function syncQuickInvoiceFields() {
   els.quickInvoiceSummary.innerHTML = `<strong>${service.label}:</strong> ${quantity} ${service.unitName} x ${fmt.format(service.rate)} = ${fmt.format(total)}.`;
 }
 
+function quickValidity(service, quantity) {
+  const now = new Date();
+  if (service.validity === "week") {
+    const validTill = addDays(now, 7);
+    return {
+      receiptDate: isoDate(now),
+      validTill: isoDate(validTill),
+      validityText: `Service Valid Till ${formatDate(isoDate(validTill))}`
+    };
+  }
+  if (service.validity === "hours") {
+    const validUntil = addHours(now, quantity);
+    return {
+      receiptDate: isoDate(now),
+      validTill: isoDate(validUntil),
+      validityText: `Service Valid Until ${formatDateTime(validUntil)}`
+    };
+  }
+  return {
+    receiptDate: isoDate(now),
+    validTill: isoDate(now),
+    validityText: `Service Valid Till ${formatDate(isoDate(now))}`
+  };
+}
+
 function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
   const quantity = Math.max(1, Number(data.get("quantity") || 1));
   const amount = service.rate * quantity;
-  const note = data.get("notes") || `${service.label} temporary billing`;
+  const note = data.get("notes") || "";
+  const validity = quickValidity(service, quantity);
   openInvoice({
     id: `quick-${Date.now()}`,
     name: data.get("name"),
@@ -949,7 +1025,7 @@ function generateQuickInvoice() {
     seats: quantity,
     standardPrice: amount,
     amount,
-    validTill: isoToday(),
+    ...validity,
     note
   });
 }
