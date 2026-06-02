@@ -145,12 +145,12 @@ values
   ('Dedicated Desk', 'individual', 1, 25000),
   ('Dedicated Desk Plus', 'individual', 1, 32000),
   ('Personal Desk', 'individual', 1, 38000),
-  ('Room 01 - 05 persons', 'room', 5, 120000),
-  ('Room 02 - 11 persons', 'room', 11, 240000),
-  ('Room 03 - 7 persons', 'room', 7, 160000),
-  ('Room 04 - 7 persons', 'room', 7, 175000),
-  ('Cubicle - 4 persons', 'room', 4, 85000),
-  ('Executive Room', 'room', 1, 210000)
+  ('Room 01 - 05 persons', 'room', 5, 92500),
+  ('Room 02 - 11 persons', 'room', 11, 203500),
+  ('Room 03 - 7 persons', 'room', 7, 129500),
+  ('Room 04 - 7 persons', 'room', 7, 129500),
+  ('Cubicle - 4 persons', 'room', 4, 74000),
+  ('Executive Room', 'room', 1, 18500)
 on conflict (name) do update set
   category = excluded.category,
   default_seats = excluded.default_seats,

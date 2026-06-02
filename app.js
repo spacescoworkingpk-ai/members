@@ -19,6 +19,8 @@ const deskCapacities = {
   personal: 2
 };
 
+const roomSeatRate = 18500;
+
 let plans = [];
 let members = [];
 let memberRecords = [];
@@ -581,11 +583,31 @@ function stateLabel(state) {
   return "Unpaid";
 }
 
+function billingStandardForMember(member) {
+  if (isRoomMember(member)) return Number(member.seats || 0) * roomSeatRate;
+  return Number(member.basePlanPrice || member.monthlyFee || 0);
+}
+
+function shouldShowDiscount(override = {}) {
+  return override.mode === "edited" || Boolean(override.showDiscount);
+}
+
+function invoicePricing(member, override = {}) {
+  const amount = Number(override.amount ?? member.monthlyFee);
+  const tax = Number(override.tax ?? 0);
+  const showDiscount = shouldShowDiscount(override);
+  const standardPrice = showDiscount
+    ? Number(override.standardPrice ?? billingStandardForMember(member) ?? amount)
+    : amount;
+  const discount = showDiscount ? Math.max(0, standardPrice - amount) : 0;
+  return { amount, tax, total: amount + tax, standardPrice, discount };
+}
+
 function rateLabel(member) {
-  const basePrice = Number(member.basePlanPrice || member.monthlyFee);
+  const basePrice = billingStandardForMember(member);
   const monthlyFee = Number(member.monthlyFee);
   const discount = Math.max(0, basePrice - monthlyFee);
-  if (!discount) return fmt.format(monthlyFee);
+  if (!discount || !member.discountReason) return fmt.format(monthlyFee);
   return `${fmt.format(monthlyFee)}<span class="rate-note">Standard ${fmt.format(basePrice)} | Discount ${fmt.format(discount)}</span>`;
 }
 
@@ -598,7 +620,6 @@ async function markPaid(id) {
       mode: "receipt",
       status: "paid",
       amount: member.monthlyFee,
-      standardPrice: member.basePlanPrice,
       validTill: member.renewalDate
     });
     await insertRow("payments", {
@@ -618,10 +639,7 @@ async function markPaid(id) {
 }
 
 async function createInvoice(member, override = {}) {
-  const standardPrice = Number(override.standardPrice ?? member.basePlanPrice ?? member.monthlyFee);
-  const amount = Number(override.amount ?? member.monthlyFee);
-  const tax = Number(override.tax ?? 0);
-  const discount = Math.max(0, standardPrice - amount);
+  const { amount, tax, total, standardPrice, discount } = invoicePricing(member, override);
   const invoiceNumber = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
   const invoice = await insertRow("invoices", {
     invoice_number: invoiceNumber,
@@ -633,7 +651,7 @@ async function createInvoice(member, override = {}) {
     discount_amount: discount,
     subtotal_amount: amount,
     tax_amount: tax,
-    total_amount: amount + tax,
+    total_amount: total,
     status: override.status || "sent",
     edit_note: override.note || null
   });
@@ -649,11 +667,7 @@ async function createInvoice(member, override = {}) {
 
 function openInvoice(member, override = {}) {
   const invoiceId = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
-  const standardPrice = Number(override.standardPrice ?? member.basePlanPrice ?? member.monthlyFee);
-  const amount = Number(override.amount ?? member.monthlyFee);
-  const tax = Number(override.tax ?? 0);
-  const total = amount + tax;
-  const discount = Math.max(0, standardPrice - amount);
+  const { amount, tax, total, standardPrice, discount } = invoicePricing(member, override);
   const invoiceTitle = override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership";
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
@@ -786,7 +800,7 @@ function openEditedInvoiceForm(member) {
   els.editInvoiceForm.elements.memberName.value = member.name;
   els.editInvoiceForm.elements.plan.value = member.plan;
   els.editInvoiceForm.elements.seats.value = member.seats;
-  els.editInvoiceForm.elements.standardPrice.value = member.basePlanPrice || member.monthlyFee;
+  els.editInvoiceForm.elements.standardPrice.value = billingStandardForMember(member) || member.monthlyFee;
   els.editInvoiceForm.elements.invoiceAmount.value = member.monthlyFee;
   els.editInvoiceForm.elements.validTill.value = member.renewalDate;
   els.editInvoiceDialog.showModal();
@@ -821,9 +835,9 @@ function exportCsv() {
     member.seats,
     member.joiningDate,
     member.renewalDate,
-    member.basePlanPrice || member.monthlyFee,
+    billingStandardForMember(member) || member.monthlyFee,
     member.monthlyFee,
-    Math.max(0, Number(member.basePlanPrice || member.monthlyFee) - Number(member.monthlyFee)),
+    member.discountReason ? Math.max(0, billingStandardForMember(member) - Number(member.monthlyFee)) : 0,
     member.discountReason,
     member.deposit,
     member.paid ? "Yes" : "No"
