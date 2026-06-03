@@ -52,6 +52,7 @@ let invoices = [];
 let payments = [];
 let staffProfile = null;
 let session = loadSession();
+let lastAutoRefreshAt = 0;
 
 const sessionKey = "spaces-coworking-staff-session";
 const fmt = new Intl.NumberFormat("en-PK", {
@@ -574,6 +575,23 @@ function updateSheetMessage(message) {
   els.sheetMessage.textContent = dirtyCount
     ? `${dirtyCount} unsaved row${dirtyCount === 1 ? "" : "s"}`
     : "No pending edits";
+}
+
+function hasUnsavedSheetChanges() {
+  return Boolean(els.memberSheet?.querySelector("tr.dirty"));
+}
+
+async function maybeRefreshData(reason = "auto") {
+  if (!session?.access_token || els.appShell.hidden || hasUnsavedSheetChanges()) return;
+  const now = Date.now();
+  if (reason !== "manual" && now - lastAutoRefreshAt < 60000) return;
+  lastAutoRefreshAt = now;
+  try {
+    await loadData();
+  } catch (error) {
+    console.error(error);
+    setSyncStatus("Refresh failed", "error");
+  }
 }
 
 async function saveSheetRow(id) {
@@ -1206,6 +1224,11 @@ els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
   alert(`Could not refresh members: ${error.message}`);
   setSyncStatus("Error", "error");
 }));
+window.addEventListener("focus", () => maybeRefreshData());
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) maybeRefreshData();
+});
+window.setInterval(() => maybeRefreshData(), 60000);
 els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
 els.downloadReceipt.addEventListener("click", () => window.print());
