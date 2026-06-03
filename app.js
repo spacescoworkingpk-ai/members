@@ -45,11 +45,32 @@ const quickServices = {
   }
 };
 
+const expenseCategories = [
+  "Food supplies",
+  "Office Supplies",
+  "Internet bills",
+  "Electricity",
+  "Rent",
+  "Cleaning",
+  "Maintenance site",
+  "Water / utilities",
+  "Maintenance building",
+  "Salary",
+  "Miscellaneous",
+  "Office furniture/equipment",
+  "Marketing",
+  "Office small equipment",
+  "Generator petrol",
+  "Security deposit return"
+];
+
 let plans = [];
 let members = [];
 let memberRecords = [];
 let invoices = [];
 let payments = [];
+let cashEntries = [];
+let cashLedgerReady = true;
 let staffProfile = null;
 let session = loadSession();
 let lastAutoRefreshAt = 0;
@@ -103,6 +124,14 @@ const els = {
   quickTotal: document.querySelector("#quickTotal"),
   quickInvoiceSummary: document.querySelector("#quickInvoiceSummary"),
   resetQuickInvoice: document.querySelector("#resetQuickInvoice"),
+  cashBalance: document.querySelector("#cashBalance"),
+  expenseForm: document.querySelector("#expenseForm"),
+  expenseCategory: document.querySelector("#expenseCategory"),
+  receivingForm: document.querySelector("#receivingForm"),
+  receivingSource: document.querySelector("#receivingSource"),
+  cashSearch: document.querySelector("#cashSearch"),
+  cashMessage: document.querySelector("#cashMessage"),
+  cashSheet: document.querySelector("#cashSheet"),
   editInvoiceDialog: document.querySelector("#editInvoiceDialog"),
   editInvoiceForm: document.querySelector("#editInvoiceForm"),
   receiptDialog: document.querySelector("#receiptDialog"),
@@ -227,6 +256,14 @@ async function loadData() {
     selectRows("invoices", "select=*&order=created_at.desc"),
     selectRows("payments", "select=*&order=paid_at.desc")
   ]);
+  try {
+    cashEntries = await selectRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc");
+    cashLedgerReady = true;
+  } catch (error) {
+    cashEntries = [];
+    cashLedgerReady = false;
+    console.warn("cash_ledger unavailable", error);
+  }
   plans = planRows.map(mapPlan);
   invoices = invoiceRows;
   payments = paymentRows;
@@ -447,6 +484,7 @@ function render() {
   renderReceipts();
   renderLedger();
   renderBars();
+  renderCashAccounting();
 }
 
 function renderMetrics() {
@@ -668,6 +706,37 @@ async function saveChangedSheetRowsFor(id) {
   }
 }
 
+async function createCashEntryFromForm(form, entryType) {
+  const data = new FormData(form);
+  const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
+  await insertRow("cash_ledger", {
+    entry_date: data.get("entryDate"),
+    entry_type: entryType,
+    category: entryType === "expense" ? categoryOrSource : null,
+    source: entryType === "receiving" ? categoryOrSource : null,
+    person_name: data.get("personName") || null,
+    amount: Number(data.get("amount") || 0),
+    notes: data.get("notes") || null
+  });
+}
+
+async function saveCashRow(id) {
+  const row = els.cashSheet.querySelector(`tr[data-cash-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
+  const entryType = value("entryType");
+  const categorySource = value("categorySource");
+  await patchRow("cash_ledger", id, {
+    entry_date: value("entryDate"),
+    entry_type: entryType,
+    category: entryType === "expense" ? categorySource : null,
+    source: entryType === "receiving" ? categorySource : null,
+    person_name: value("personName") || null,
+    amount: Number(value("amount") || 0),
+    notes: value("notes") || null
+  });
+}
+
 function renderReceipts() {
   const queue = members
     .filter((member) => !member.paid)
@@ -736,6 +805,76 @@ function renderLedger() {
   `).join("");
 }
 
+function cashAmount(entry) {
+  const amount = Number(entry.amount || 0);
+  return entry.entry_type === "expense" ? -amount : amount;
+}
+
+function canEditCashEntry(entry) {
+  if (canSeeRevenue()) return true;
+  if (entry.created_by && entry.created_by !== session?.user?.id) return false;
+  const createdAt = new Date(entry.created_at || entry.entry_date);
+  return Date.now() - createdAt.getTime() <= 3 * 86400000;
+}
+
+function cashEntryOptions(type, selected) {
+  const options = type === "expense"
+    ? expenseCategories
+    : ["Owner transfer - Abrar", ...plans.map((plan) => plan.name), "Day Pass", "Weekly Pass", "Conference Room", "Miscellaneous"];
+  return options.map((option) => `
+    <option value="${escapeAttr(option)}" ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>
+  `).join("");
+}
+
+function renderCashAccounting() {
+  if (!cashLedgerReady) {
+    els.cashBalance.textContent = "Setup needed";
+    els.cashMessage.textContent = "Run the cash ledger SQL in Supabase to enable this section.";
+    els.cashSheet.innerHTML = `<tr><td colspan="7">Cash ledger table is not enabled yet.</td></tr>`;
+    return;
+  }
+  const query = els.cashSearch.value.trim().toLowerCase();
+  const balance = cashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
+  els.cashBalance.textContent = fmt.format(balance);
+
+  const filtered = cashEntries.filter((entry) => {
+    const haystack = [
+      entry.entry_type,
+      entry.category,
+      entry.source,
+      entry.person_name,
+      entry.notes
+    ].join(" ").toLowerCase();
+    return haystack.includes(query);
+  });
+
+  els.cashSheet.innerHTML = filtered.length ? filtered.map((entry) => {
+    const editable = canEditCashEntry(entry);
+    const typeLabel = entry.entry_type === "expense" ? "Expense" : "Receiving";
+    const categoryValue = entry.entry_type === "expense" ? entry.category : entry.source;
+    return `
+      <tr data-cash-id="${entry.id}" class="${editable ? "" : "locked"}">
+        <td><input data-field="entryDate" type="date" value="${escapeAttr(entry.entry_date)}" ${editable ? "" : "disabled"}></td>
+        <td>
+          <select data-field="entryType" ${editable ? "" : "disabled"}>
+            <option value="expense" ${entry.entry_type === "expense" ? "selected" : ""}>Expense</option>
+            <option value="receiving" ${entry.entry_type === "receiving" ? "selected" : ""}>Receiving</option>
+          </select>
+        </td>
+        <td><select data-field="categorySource" ${editable ? "" : "disabled"}>${cashEntryOptions(entry.entry_type, categoryValue)}</select></td>
+        <td><input data-field="personName" value="${escapeAttr(entry.person_name)}" ${editable ? "" : "disabled"}></td>
+        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
+        <td><textarea data-field="notes" rows="1" ${editable ? "" : "disabled"}>${escapeHtml(entry.notes)}</textarea></td>
+        <td>${editable ? `<button class="tiny-button" data-action="save-cash-row" data-id="${entry.id}" type="button">Save</button>` : `<span class="locked-note">Locked</span>`}</td>
+      </tr>
+    `;
+  }).join("") : `<tr><td colspan="7">No cash entries found. Run the cash ledger SQL if this section has not been enabled yet.</td></tr>`;
+
+  els.cashMessage.textContent = filtered.length
+    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} | Staff can edit own rows for 3 days`
+    : "No cash entries";
+}
+
 function renderPlans() {
   els.planList.innerHTML = plans.length ? plans.map((plan) => `
     <article class="plan-card">
@@ -751,6 +890,22 @@ function renderPlans() {
 
   els.planSelect.innerHTML = plans.map((plan) => `
     <option value="${plan.name}" data-id="${plan.id}" data-seats="${plan.seats}" data-price="${plan.price}">${plan.name}</option>
+  `).join("");
+
+  els.expenseCategory.innerHTML = expenseCategories.map((category) => `
+    <option value="${escapeAttr(category)}">${escapeHtml(category)}</option>
+  `).join("");
+
+  const receivingSources = [
+    "Owner transfer - Abrar",
+    ...plans.map((plan) => plan.name),
+    "Day Pass",
+    "Weekly Pass",
+    "Conference Room",
+    "Miscellaneous"
+  ];
+  els.receivingSource.innerHTML = receivingSources.map((source) => `
+    <option value="${escapeAttr(source)}">${escapeHtml(source)}</option>
   `).join("");
 }
 
@@ -1067,6 +1222,8 @@ function setDefaultDates() {
   renewal.setMonth(renewal.getMonth() + 1);
   els.memberForm.elements.joiningDate.value = today.toISOString().slice(0, 10);
   els.memberForm.elements.renewalDate.value = renewal.toISOString().slice(0, 10);
+  els.expenseForm.elements.entryDate.value = isoToday();
+  els.receivingForm.elements.entryDate.value = isoToday();
 }
 
 function syncPlanFields() {
@@ -1185,6 +1342,15 @@ document.addEventListener("click", (event) => {
     saveChangedSheetRowsFor(button.dataset.id);
     return;
   }
+  if (button.dataset.action === "save-cash-row") {
+    saveCashRow(button.dataset.id)
+      .then(loadData)
+      .catch((error) => {
+        alert(`Could not save cash row: ${error.message}`);
+        setSyncStatus("Error", "error");
+      });
+    return;
+  }
   const member = members.find((item) => item.id === button.dataset.id);
   if (!member) return;
   if (button.dataset.action === "paid") markPaid(member.id);
@@ -1218,6 +1384,7 @@ els.resetQuickInvoice.addEventListener("click", () => {
 });
 els.memberSearch.addEventListener("input", renderMembers);
 els.sheetSearch.addEventListener("input", renderSheetEditor);
+els.cashSearch.addEventListener("input", renderCashAccounting);
 els.memberSheet.addEventListener("input", (event) => {
   const row = event.target.closest("tr[data-member-id]");
   if (row) markSheetRowDirty(row);
@@ -1232,6 +1399,13 @@ els.memberSheet.addEventListener("change", (event) => {
     row.querySelector('[data-field="monthlyFee"]').value = selected.dataset.price;
   }
   markSheetRowDirty(row);
+});
+els.cashSheet.addEventListener("change", (event) => {
+  if (event.target.dataset.field !== "entryType") return;
+  const row = event.target.closest("tr[data-cash-id]");
+  const categorySelect = row?.querySelector('[data-field="categorySource"]');
+  if (!categorySelect) return;
+  categorySelect.innerHTML = cashEntryOptions(event.target.value, "");
 });
 els.saveAllSheetRows.addEventListener("click", saveChangedSheetRows);
 els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
@@ -1272,6 +1446,34 @@ els.memberForm.addEventListener("submit", async (event) => {
 els.quickInvoiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
   generateQuickInvoice();
+});
+
+els.expenseForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    setSyncStatus("Saving", "busy");
+    await createCashEntryFromForm(els.expenseForm, "expense");
+    els.expenseForm.reset();
+    setDefaultDates();
+    await loadData();
+  } catch (error) {
+    alert(`Could not save expense: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
+});
+
+els.receivingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    setSyncStatus("Saving", "busy");
+    await createCashEntryFromForm(els.receivingForm, "receiving");
+    els.receivingForm.reset();
+    setDefaultDates();
+    await loadData();
+  } catch (error) {
+    alert(`Could not save receiving: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
 });
 
 els.editInvoiceForm.addEventListener("submit", async (event) => {

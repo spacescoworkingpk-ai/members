@@ -93,6 +93,25 @@ create table if not exists public.expenses (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.cash_ledger (
+  id uuid primary key default gen_random_uuid(),
+  entry_date date not null default current_date,
+  entry_type text not null check (entry_type in ('expense', 'receiving')),
+  category text,
+  source text,
+  person_name text,
+  amount integer not null check (amount >= 0),
+  notes text,
+  created_by uuid not null default auth.uid() references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (
+    (entry_type = 'expense' and category is not null and source is null)
+    or
+    (entry_type = 'receiving' and source is not null and category is null)
+  )
+);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -155,6 +174,11 @@ create trigger invoices_set_updated_at
 before update on public.invoices
 for each row execute function public.set_updated_at();
 
+drop trigger if exists cash_ledger_set_updated_at on public.cash_ledger;
+create trigger cash_ledger_set_updated_at
+before update on public.cash_ledger
+for each row execute function public.set_updated_at();
+
 insert into public.plans (name, category, default_seats, standard_monthly_rate)
 values
   ('Flexible Desk', 'individual', 1, 15500),
@@ -186,6 +210,7 @@ alter table public.invoices enable row level security;
 alter table public.invoice_items enable row level security;
 alter table public.payments enable row level security;
 alter table public.expenses enable row level security;
+alter table public.cash_ledger enable row level security;
 
 drop policy if exists "Staff can read their own profile" on public.staff_profiles;
 create policy "Staff can read their own profile"
@@ -367,3 +392,34 @@ create policy "Staff can delete expenses"
 on public.expenses for delete
 to authenticated
 using (public.is_active_staff());
+
+drop policy if exists "Staff can read cash ledger" on public.cash_ledger;
+create policy "Staff can read cash ledger"
+on public.cash_ledger for select
+to authenticated
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert cash ledger" on public.cash_ledger;
+create policy "Staff can insert cash ledger"
+on public.cash_ledger for insert
+to authenticated
+with check (public.is_active_staff() and created_by = auth.uid());
+
+drop policy if exists "Staff can update recent own cash ledger" on public.cash_ledger;
+create policy "Staff can update recent own cash ledger"
+on public.cash_ledger for update
+to authenticated
+using (
+  public.is_staff_admin()
+  or (public.is_active_staff() and created_by = auth.uid() and created_at >= now() - interval '3 days')
+)
+with check (
+  public.is_staff_admin()
+  or (public.is_active_staff() and created_by = auth.uid() and created_at >= now() - interval '3 days')
+);
+
+drop policy if exists "Staff admins can delete cash ledger" on public.cash_ledger;
+create policy "Staff admins can delete cash ledger"
+on public.cash_ledger for delete
+to authenticated
+using (public.is_staff_admin());

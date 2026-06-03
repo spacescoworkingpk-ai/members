@@ -467,6 +467,64 @@ h2 {
   margin-bottom: 18px;
 }
 
+.cash-panel {
+  margin-bottom: 18px;
+}
+
+.cash-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.cash-balance {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #bde0c9;
+  border-radius: 8px;
+  background: #eaf7ee;
+  text-align: right;
+}
+
+.cash-balance span {
+  color: #255f36;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.cash-balance strong {
+  color: #174326;
+  font-size: 20px;
+}
+
+.compact-form {
+  margin-top: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cash-table {
+  min-width: 1120px;
+}
+
+.cash-table tr.locked {
+  opacity: 0.72;
+}
+
+.locked-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .sheet-actions,
 .sheet-toolbar {
   display: flex;
@@ -1200,6 +1258,7 @@ label textarea {
   .summary-grid,
   .workspace-band,
   .content-grid,
+  .cash-entry-grid,
   .form-grid {
     grid-template-columns: 1fr;
   }
@@ -1230,6 +1289,10 @@ label textarea {
   .panel,
   .insight-panel {
     padding: 14px;
+  }
+
+  .cash-balance {
+    text-align: left;
   }
 
   .metric strong {

@@ -35,6 +35,7 @@
           <a href="#member-sheet">Sheet Editor</a>
           <a href="#receipts">Receipts</a>
           <a href="#quick-invoice">Quick Invoice</a>
+          <a href="#cash-accounting">Staff Cash</a>
           <a href="#accounting">Accounting</a>
           <a href="#plans">Plans</a>
         </nav>
@@ -139,6 +140,77 @@
               <button class="primary-button" type="submit">Generate receipt</button>
             </div>
           </form>
+        </section>
+
+        <section class="panel cash-panel" id="cash-accounting">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Staff cash accounting</p>
+              <h2>Expenses, receiving, and cash in hand</h2>
+            </div>
+            <div class="cash-balance">
+              <span>Current cash in hand</span>
+              <strong id="cashBalance">PKR 0</strong>
+            </div>
+          </div>
+          <div class="cash-entry-grid">
+            <form id="expenseForm" class="staff-form compact-form">
+              <div class="section-heading">
+                <p class="eyebrow">Expenses</p>
+                <h2>Add expense</h2>
+              </div>
+              <div class="form-grid compact-grid">
+                <label>Date<input required name="entryDate" type="date"></label>
+                <label>Category<select required name="category" id="expenseCategory"></select></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Paid to<input name="personName" placeholder="Vendor / person"></label>
+                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Bill number, reason, staff notes"></textarea></label>
+              </div>
+              <div class="modal-actions inline-actions">
+                <button class="primary-button" type="submit">Save expense</button>
+              </div>
+            </form>
+
+            <form id="receivingForm" class="staff-form compact-form">
+              <div class="section-heading">
+                <p class="eyebrow">Receiving</p>
+                <h2>Add cash received</h2>
+              </div>
+              <div class="form-grid compact-grid">
+                <label>Date<input required name="entryDate" type="date"></label>
+                <label>Source<select required name="source" id="receivingSource"></select></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Received from<input required name="personName" placeholder="Name who paid / Abrar"></label>
+                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Member plan, transfer note, receipt reference"></textarea></label>
+              </div>
+              <div class="modal-actions inline-actions">
+                <button class="primary-button" type="submit">Save receiving</button>
+              </div>
+            </form>
+          </div>
+          <div class="sheet-toolbar">
+            <label class="search">
+              <span>Filter cash sheet</span>
+              <input id="cashSearch" type="search" placeholder="Category, source, person, notes">
+            </label>
+            <span class="sheet-message" id="cashMessage">Synced cash entries</span>
+          </div>
+          <div class="sheet-wrap">
+            <table class="cash-table sheet-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Category / Source</th>
+                  <th>Person</th>
+                  <th>Amount</th>
+                  <th>Notes</th>
+                  <th>Save</th>
+                </tr>
+              </thead>
+              <tbody id="cashSheet"></tbody>
+            </table>
+          </div>
         </section>
 
         <section class="panel member-form-panel" id="member-form">
