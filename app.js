@@ -72,6 +72,8 @@ const els = {
   syncStatus: document.querySelector("#syncStatus"),
   metricRevenue: document.querySelector("#metricRevenue"),
   metricCollected: document.querySelector("#metricCollected"),
+  metricCollectedMonth: document.querySelector("#metricCollectedMonth"),
+  metricPendingMonth: document.querySelector("#metricPendingMonth"),
   metricMembers: document.querySelector("#metricMembers"),
   metricSeats: document.querySelector("#metricSeats"),
   metricDue: document.querySelector("#metricDue"),
@@ -82,6 +84,7 @@ const els = {
   ledger: document.querySelector("#ledger"),
   planList: document.querySelector("#planList"),
   planBars: document.querySelector("#planBars"),
+  planBarsTitle: document.querySelector("#planBarsTitle"),
   memberSearch: document.querySelector("#memberSearch"),
   sheetSearch: document.querySelector("#sheetSearch"),
   memberSheet: document.querySelector("#memberSheet"),
@@ -407,6 +410,14 @@ function percentOf(value, total) {
   return total ? Math.round((Number(value) / Number(total)) * 100) : 0;
 }
 
+function canSeeRevenue() {
+  return staffProfile?.role === "owner" || staffProfile?.role === "manager";
+}
+
+function moneyOrRestricted(amount) {
+  return canSeeRevenue() ? fmt.format(amount) : "Restricted";
+}
+
 function categorySummaries() {
   const categories = [
     { key: "rooms", label: "Rooms", capacity: capacityForCategory("rooms") },
@@ -447,15 +458,17 @@ function renderMetrics() {
   const seats = members.reduce((sum, member) => sum + Number(member.seats), 0);
   const capacity = capacityForCategory("rooms") + deskCapacities.flexible + deskCapacities.dedicated + deskCapacities.personal;
   const percentage = total ? Math.round((collected / total) * 100) : 0;
-  const hideMonthlyRevenue = staffProfile?.role === "staff";
+  const pendingThisMonth = total - collected;
 
-  els.metricRevenue.textContent = hideMonthlyRevenue ? "Restricted" : fmt.format(total);
-  els.metricCollected.textContent = hideMonthlyRevenue ? "Owner / manager only" : `${percentage}% collected`;
+  els.metricRevenue.textContent = moneyOrRestricted(total);
+  els.metricCollected.textContent = canSeeRevenue() ? `${percentage}% collected` : "Owner / manager only";
+  els.metricCollectedMonth.textContent = moneyOrRestricted(collected);
+  els.metricPendingMonth.textContent = moneyOrRestricted(pendingThisMonth);
   els.metricMembers.textContent = members.length;
   els.metricSeats.textContent = `${seats}/${capacity} seats utilized (${percentOf(seats, capacity)}%)`;
   els.metricDue.textContent = dueSoon;
   els.metricPending.textContent = members.filter((member) => !member.paid).length + members.reduce((sum, member) => sum + Number(member.previousUnpaidCount || 0), 0);
-  els.metricOutstanding.textContent = `${fmt.format(pending)} outstanding`;
+  els.metricOutstanding.textContent = canSeeRevenue() ? `${fmt.format(pending)} outstanding` : "Amount restricted";
 }
 
 function renderMembers() {
@@ -483,7 +496,7 @@ function renderMembers() {
       <tr class="member-group-row">
         <td colspan="8">
           <strong>${escapeHtml(group.label)}</strong>
-          <span>${groupMembers.length} member${groupMembers.length === 1 ? "" : "s"} | ${occupied} seat${occupied === 1 ? "" : "s"} | ${fmt.format(revenue)}</span>
+          <span>${groupMembers.length} member${groupMembers.length === 1 ? "" : "s"} | ${occupied} seat${occupied === 1 ? "" : "s"}${canSeeRevenue() ? ` | ${fmt.format(revenue)}` : ""}</span>
         </td>
       </tr>
       ${groupMembers.map((member) => {
@@ -496,7 +509,7 @@ function renderMembers() {
         <td><strong>${escapeHtml(member.plan)}</strong><span>${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}</span></td>
         <td>${formatDate(member.joiningDate)}</td>
         <td>${formatDate(member.validTill)}</td>
-        <td>${rateLabel(member)}</td>
+        <td>${canSeeRevenue() ? rateLabel(member) : "Restricted"}</td>
         <td><span class="status ${state}">${stateLabel(state)}</span></td>
         <td>
           <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
@@ -679,7 +692,7 @@ function renderReceipts() {
           <span>${escapeHtml(member.plan)} | Valid till ${formatDate(member.validTill)}</span>
         </div>
         <div class="queue-amount">
-          <strong>${fmt.format(Number(member.monthlyFee))}</strong>
+          <strong>${moneyOrRestricted(Number(member.monthlyFee))}</strong>
           <span>${dueLabel}</span>
         </div>
       </header>
@@ -718,7 +731,7 @@ function renderLedger() {
         <strong>${label}</strong>
         <span>${detail}</span>
       </div>
-      <strong>${fmt.format(amount)}</strong>
+      <strong>${moneyOrRestricted(amount)}</strong>
     </div>
   `).join("");
 }
@@ -731,7 +744,7 @@ function renderPlans() {
           <strong>${plan.name}</strong>
           <span>${plan.type} | ${plan.seats} person${plan.seats === 1 ? "" : "s"}</span>
         </div>
-        <strong>${fmt.format(plan.price)}</strong>
+        <strong>${moneyOrRestricted(plan.price)}</strong>
       </header>
     </article>
   `).join("") : `<p class="empty">Run the Supabase schema to load membership plans.</p>`;
@@ -743,12 +756,13 @@ function renderPlans() {
 
 function renderBars() {
   const summaries = categorySummaries();
+  els.planBarsTitle.textContent = canSeeRevenue() ? "Occupancy and revenue mix" : "Occupancy mix";
 
   els.planBars.innerHTML = summaries.map((row) => `
     <div class="bar-row">
       <div class="bar-label">
         <span>${row.label}</span>
-        <strong>${row.occupied}/${row.capacity} | ${fmt.format(row.revenue)}</strong>
+        <strong>${row.occupied}/${row.capacity}${canSeeRevenue() ? ` | ${fmt.format(row.revenue)}` : ""}</strong>
       </div>
       <div class="bar-track"><div class="bar-fill" style="width: ${Math.min(100, Math.max(row.occupied ? 8 : 0, row.utilization))}%"></div></div>
       <div class="bar-meta">${row.utilization}% utilization</div>

@@ -332,6 +332,10 @@ h2 {
   padding: 18px;
 }
 
+.owner-only {
+  border-color: #d6e7ef;
+}
+
 .metric span,
 .metric small {
   display: block;
