@@ -74,6 +74,11 @@ let cashLedgerReady = true;
 let staffProfile = null;
 let session = loadSession();
 let lastAutoRefreshAt = 0;
+let currentReceiptShare = {
+  message: "",
+  fileName: "spaces-receipt.png",
+  receipt: null
+};
 
 const sessionKey = "spaces-coworking-staff-session";
 const fmt = new Intl.NumberFormat("en-PK", {
@@ -1038,15 +1043,24 @@ function openInvoice(member, override = {}) {
   const validText = validityLabel(member, override);
   const description = override.description || member.plan;
   const quantity = Number(override.seats ?? member.seats);
+  const customerLabel = override.mode === "quick" ? "Customer" : "Member";
+  const shareTitle = override.mode === "edited" ? "Spaces Coworking Invoice" : "Spaces Coworking Receipt";
   const message = [
-    `Spaces Coworking ${statusLine.toLowerCase()} ${invoiceId}`,
-    `${override.mode === "quick" ? "Customer" : "Member"}: ${member.name}`,
+    `*${shareTitle}*`,
+    `${invoiceLabel} ${invoiceId}`,
+    `${customerLabel}: ${member.name}`,
+    member.phone ? `Contact: ${member.phone}` : "",
     `Service: ${description}`,
+    quantity > 1 ? `Quantity: ${quantity}` : "",
     discount ? `Standard rate: ${fmt.format(standardPrice)}` : "",
     discount ? `Discount: ${fmt.format(discount)}` : "",
-    `Amount: ${fmt.format(total)}`,
+    `Total amount: ${fmt.format(total)}`,
     validText,
     override.note ? `Note: ${override.note}` : "",
+    "",
+    `${business.name}`,
+    business.address,
+    `${business.phone} | ${business.landline}`,
     "Thank you."
   ].filter(Boolean).join("\n");
 
@@ -1057,6 +1071,28 @@ function openInvoice(member, override = {}) {
 
   const amountCell = amount.toLocaleString("en-PK");
   const standardCell = standardPrice.toLocaleString("en-PK");
+  currentReceiptShare = {
+    message,
+    fileName: `${invoiceId.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-spaces-receipt.png`,
+    receipt: {
+      invoiceId,
+      invoiceTitle,
+      invoiceLabel,
+      customerLabel,
+      customerName: member.name,
+      phone: member.phone,
+      issuedDate,
+      validText,
+      description,
+      quantity,
+      standardPrice,
+      discount,
+      amount,
+      tax,
+      total,
+      noteRows
+    }
+  };
 
   els.receiptPreview.innerHTML = `
     <div class="receipt-box">
@@ -1152,6 +1188,211 @@ function openInvoice(member, override = {}) {
   `;
   els.whatsappReceipt.href = `https://wa.me/${cleanPhone(member.phone)}?text=${encodeURIComponent(message)}`;
   els.receiptDialog.showModal();
+}
+
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  let line = "";
+  let cursorY = y;
+  words.forEach((word) => {
+    const testLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      ctx.fillText(line, x, cursorY);
+      line = word;
+      cursorY += lineHeight;
+    } else {
+      line = testLine;
+    }
+  });
+  if (line) ctx.fillText(line, x, cursorY);
+  return cursorY + lineHeight;
+}
+
+function receiptPreviewFile() {
+  const receipt = currentReceiptShare.receipt;
+  if (!receipt) throw new Error("No receipt is open.");
+
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(window.devicePixelRatio || 2, 3);
+  const width = 900;
+  const height = 1200;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#eef2f4";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = "rgba(20, 24, 26, 0.16)";
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 12;
+  ctx.fillRect(54, 34, 792, 1118);
+  ctx.shadowColor = "transparent";
+
+  ctx.fillStyle = "#202020";
+  ctx.beginPath();
+  ctx.roundRect(742, 34, 104, 210, 0);
+  ctx.fill();
+  ctx.fillStyle = "#1197d5";
+  ctx.beginPath();
+  ctx.roundRect(54, 1038, 500, 114, 0);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(88, 78);
+  ctx.rotate(0.02);
+  ctx.fillStyle = "#1197d5";
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 48, 110, 18);
+  ctx.fill();
+  ctx.fillStyle = "#232323";
+  ctx.beginPath();
+  ctx.roundRect(54, 50, 48, 110, 18);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = "#202020";
+  ctx.font = "900 48px Arial, sans-serif";
+  ctx.fillText("spaces", 210, 135);
+  ctx.fillStyle = "#1197d5";
+  ctx.beginPath();
+  ctx.arc(405, 122, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#1197d5";
+  ctx.font = "800 34px Arial, sans-serif";
+  ctx.fillText(receipt.invoiceTitle, 88, 230);
+
+  ctx.fillStyle = "#4d555a";
+  ctx.font = "600 17px Arial, sans-serif";
+  ctx.fillText(`${receipt.invoiceLabel} ${receipt.invoiceId}`, 610, 100);
+  ctx.fillText(business.phone, 610, 132);
+  ctx.fillText(business.email, 610, 162);
+  drawWrappedText(ctx, business.address, 610, 192, 190, 24);
+
+  ctx.fillStyle = "#222222";
+  ctx.font = "800 18px Arial, sans-serif";
+  ctx.fillText(`${receipt.customerLabel}: ${receipt.customerName}`, 88, 282);
+  ctx.font = "600 16px Arial, sans-serif";
+  ctx.fillStyle = "#4d555a";
+  ctx.fillText(`Contact: ${receipt.phone || "-"}`, 88, 314);
+  ctx.fillText(`Membership From: ${formatDate(receipt.issuedDate)}`, 88, 346);
+
+  const tableX = 88;
+  const tableY = 430;
+  const tableW = 724;
+  ctx.fillStyle = "#202020";
+  ctx.fillRect(tableX, tableY, tableW, 54);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 14px Arial, sans-serif";
+  ctx.fillText("DESCRIPTION", tableX + 22, tableY + 34);
+  ctx.fillText("QTY.", tableX + 430, tableY + 34);
+  ctx.fillText("PRICE", tableX + 522, tableY + 34);
+  ctx.fillText("AMOUNT", tableX + 626, tableY + 34);
+
+  ctx.strokeStyle = "#d7dde1";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tableX, tableY + 54, tableW, 110);
+  ctx.fillStyle = "#222222";
+  ctx.font = "700 17px Arial, sans-serif";
+  drawWrappedText(ctx, receipt.description, tableX + 22, tableY + 96, 350, 23);
+  ctx.fillText(String(receipt.quantity).padStart(2, "0"), tableX + 438, tableY + 96);
+  ctx.fillText(receipt.standardPrice.toLocaleString("en-PK"), tableX + 522, tableY + 96);
+  ctx.fillText(receipt.amount.toLocaleString("en-PK"), tableX + 632, tableY + 96);
+
+  let noteY = tableY + 190;
+  ctx.font = "600 15px Arial, sans-serif";
+  ctx.fillStyle = "#4d555a";
+  receipt.noteRows.forEach((row) => {
+    noteY = drawWrappedText(ctx, row, tableX + 22, noteY, 680, 22);
+  });
+
+  let totalY = 760;
+  const labelX = 530;
+  const valueX = 748;
+  ctx.font = "700 18px Arial, sans-serif";
+  ctx.fillStyle = "#4d555a";
+  if (receipt.discount) {
+    ctx.fillText("Standard Rate", labelX, totalY);
+    ctx.fillText(receipt.standardPrice.toLocaleString("en-PK"), valueX, totalY);
+    totalY += 34;
+    ctx.fillText("Discount", labelX, totalY);
+    ctx.fillText(`- ${receipt.discount.toLocaleString("en-PK")}`, valueX, totalY);
+    totalY += 42;
+  }
+  ctx.fillStyle = "#232323";
+  ctx.fillText("Subtotal", labelX, totalY);
+  ctx.fillText(receipt.amount.toLocaleString("en-PK"), valueX, totalY);
+  totalY += 38;
+  ctx.fillText("Tax", labelX, totalY);
+  ctx.fillText(receipt.tax.toLocaleString("en-PK"), valueX, totalY);
+  totalY += 24;
+  ctx.strokeStyle = "#aab0c9";
+  ctx.beginPath();
+  ctx.moveTo(labelX, totalY);
+  ctx.lineTo(812, totalY);
+  ctx.stroke();
+  totalY += 40;
+  ctx.font = "900 24px Arial, sans-serif";
+  ctx.fillText("Total", labelX, totalY);
+  ctx.fillText(receipt.total.toLocaleString("en-PK"), valueX, totalY);
+
+  ctx.fillStyle = "#222222";
+  ctx.font = "700 17px Arial, sans-serif";
+  drawWrappedText(ctx, receipt.validText, 88, 974, 360, 25);
+  ctx.strokeStyle = "#333333";
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(88, 1010);
+  ctx.lineTo(390, 1010);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "900 15px Arial, sans-serif";
+  ctx.fillText("Spaces Representative", 88, 1042);
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#222222";
+  ctx.font = "900 30px Arial, sans-serif";
+  ctx.fillText("Thank you!", 812, 974);
+  ctx.font = "600 16px Arial, sans-serif";
+  ctx.fillText(business.shortAddress.replace("<br>", " "), 812, 1010);
+  ctx.fillText(business.landline, 812, 1040);
+  ctx.fillStyle = "#1197d5";
+  ctx.font = "800 17px Arial, sans-serif";
+  ctx.fillText(business.website, 812, 1098);
+  ctx.textAlign = "left";
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Could not generate receipt image."));
+        return;
+      }
+      resolve(new File([blob], currentReceiptShare.fileName, { type: "image/png" }));
+    }, "image/png", 0.94);
+  });
+}
+
+async function shareReceiptToWhatsapp(event) {
+  if (!navigator.share || !navigator.canShare) return;
+  event.preventDefault();
+  try {
+    const file = await receiptPreviewFile();
+    if (navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: "Spaces Coworking receipt",
+        text: currentReceiptShare.message,
+        files: [file]
+      });
+      return;
+    }
+  } catch (error) {
+    console.warn("Receipt image sharing failed", error);
+  }
+  window.open(els.whatsappReceipt.href, "_blank", "noopener,noreferrer");
 }
 
 function openReceipt(member) {
@@ -1421,6 +1662,7 @@ els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
 els.downloadReceipt.addEventListener("click", () => window.print());
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
+els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
 els.resetMemberForm.addEventListener("click", () => {
   window.setTimeout(() => {
     setDefaultDates();
