@@ -1249,6 +1249,11 @@ label textarea {
     justify-content: stretch;
   }
 
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .primary-button,
   .ghost-button,
   .tiny-button {
@@ -1308,6 +1313,18 @@ label textarea {
     box-shadow: 0 12px 28px rgba(0, 143, 208, 0.1);
   }
 
+  .cash-entry-grid {
+    gap: 10px;
+  }
+
+  .compact-form {
+    padding: 12px;
+  }
+
+  .compact-grid {
+    grid-template-columns: 1fr;
+  }
+
   label input,
   label select,
   .search input {
@@ -1319,23 +1336,30 @@ label textarea {
     font-size: 16px;
   }
 
-  .member-table {
+  .member-table,
+  .cash-table {
     min-width: 0;
   }
 
-  .member-table thead {
+  .member-table thead,
+  .cash-table thead {
     display: none;
   }
 
   .member-table,
   .member-table tbody,
   .member-table tr,
-  .member-table td {
+  .member-table td,
+  .cash-table,
+  .cash-table tbody,
+  .cash-table tr,
+  .cash-table td {
     display: block;
     width: 100%;
   }
 
-  .member-table tr {
+  .member-table tr,
+  .cash-table tr {
     margin-bottom: 10px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1343,7 +1367,8 @@ label textarea {
     overflow: hidden;
   }
 
-  .member-table td {
+  .member-table td,
+  .cash-table td {
     display: grid;
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 10px;
@@ -1352,7 +1377,8 @@ label textarea {
     font-size: 13px;
   }
 
-  .member-table td::before {
+  .member-table td::before,
+  .cash-table td::before {
     color: var(--muted);
     font-size: 11px;
     font-weight: 900;
@@ -1391,7 +1417,36 @@ label textarea {
     content: "Action";
   }
 
-  .member-table td:last-child {
+  .cash-table td:nth-child(1)::before {
+    content: "Date";
+  }
+
+  .cash-table td:nth-child(2)::before {
+    content: "Type";
+  }
+
+  .cash-table td:nth-child(3)::before {
+    content: "Category";
+  }
+
+  .cash-table td:nth-child(4)::before {
+    content: "Person";
+  }
+
+  .cash-table td:nth-child(5)::before {
+    content: "Amount";
+  }
+
+  .cash-table td:nth-child(6)::before {
+    content: "Notes";
+  }
+
+  .cash-table td:nth-child(7)::before {
+    content: "Save";
+  }
+
+  .member-table td:last-child,
+  .cash-table td:last-child {
     border-bottom: 0;
   }
 
@@ -1411,7 +1466,8 @@ label textarea {
     content: none;
   }
 
-  .member-table td:last-child .tiny-button {
+  .member-table td:last-child .tiny-button,
+  .cash-table td:last-child .tiny-button {
     margin: 4px 0;
   }
 
