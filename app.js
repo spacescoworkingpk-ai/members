@@ -324,6 +324,7 @@ function mapMember(row) {
     status: row.status,
     paid: Boolean(paidInvoice),
     paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null,
+    paidAmount: paidPayment ? Number(paidPayment.amount || 0) : Number(paidInvoice?.total_amount || 0),
     previousUnpaidAmount: previousUnpaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0),
     previousUnpaidCount: previousUnpaidInvoices.length
   };
@@ -405,7 +406,12 @@ function membershipCycle(memberOrRow, referenceDate = new Date()) {
     return { from: today, validTill: today };
   }
   const joining = new Date(`${joiningDate}T00:00:00`);
-  const fromDate = dateInMonthByJoiningDay(referenceDate.getFullYear(), referenceDate.getMonth(), joining.getDate());
+  const reference = new Date(referenceDate);
+  reference.setHours(0, 0, 0, 0);
+  let fromDate = dateInMonthByJoiningDay(reference.getFullYear(), reference.getMonth(), joining.getDate());
+  if (reference < fromDate) {
+    fromDate = dateInMonthByJoiningDay(reference.getFullYear(), reference.getMonth() - 1, joining.getDate());
+  }
   const validTillDate = addMonthsClamped(fromDate, 1);
   return {
     from: isoDate(fromDate),
@@ -453,7 +459,7 @@ function percentOf(value, total) {
 }
 
 function canSeeRevenue() {
-  return staffProfile?.role === "owner" || staffProfile?.role === "manager";
+  return staffProfile?.role === "owner";
 }
 
 function moneyOrRestricted(amount) {
@@ -494,7 +500,7 @@ function render() {
 
 function renderMetrics() {
   const total = members.reduce((sum, member) => sum + Number(member.monthlyFee), 0);
-  const collected = members.filter((member) => member.paid).reduce((sum, member) => sum + Number(member.monthlyFee), 0);
+  const collected = members.filter((member) => member.paid).reduce((sum, member) => sum + Number(member.paidAmount || member.monthlyFee), 0);
   const previousUnpaid = members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
   const pending = total - collected + previousUnpaid;
   const dueSoon = members.filter((member) => !member.paid && daysUntil(member.validTill) <= 7).length;
@@ -504,7 +510,7 @@ function renderMetrics() {
   const pendingThisMonth = total - collected;
 
   els.metricRevenue.textContent = moneyOrRestricted(total);
-  els.metricCollected.textContent = canSeeRevenue() ? `${percentage}% collected` : "Owner / manager only";
+  els.metricCollected.textContent = canSeeRevenue() ? `${percentage}% collected` : "Owner only";
   els.metricCollectedMonth.textContent = moneyOrRestricted(collected);
   els.metricPendingMonth.textContent = moneyOrRestricted(pendingThisMonth);
   els.metricMembers.textContent = members.length;
@@ -600,15 +606,16 @@ function renderSheetEditor() {
       <td><input required data-field="seats" type="number" min="1" value="${Number(member.seats || 1)}"></td>
       <td><input required data-field="joiningDate" type="date" value="${escapeAttr(member.joiningDate)}"></td>
       <td><input required data-field="renewalDate" type="date" value="${escapeAttr(member.renewalDate)}"></td>
-      <td><input required data-field="basePlanPrice" type="number" min="0" step="500" value="${Number(member.basePlanPrice || 0)}"></td>
-      <td><input required data-field="monthlyFee" type="number" min="0" step="500" value="${Number(member.monthlyFee || 0)}"></td>
-      <td><input data-field="deposit" type="number" min="0" step="500" value="${Number(member.deposit || 0)}"></td>
-      <td><input data-field="discountReason" value="${escapeAttr(member.discountReason)}"></td>
+      <td>${canSeeRevenue() ? `<input required data-field="basePlanPrice" type="number" min="0" step="500" value="${Number(member.basePlanPrice || 0)}">` : `<input disabled value="Restricted">`}</td>
+      <td>${canSeeRevenue() ? `<input required data-field="monthlyFee" type="number" min="0" step="500" value="${Number(member.monthlyFee || 0)}">` : `<input disabled value="Restricted">`}</td>
+      <td>${canSeeRevenue() ? `<input data-field="deposit" type="number" min="0" step="500" value="${Number(member.deposit || 0)}">` : `<input disabled value="Restricted">`}</td>
+      <td>${canSeeRevenue() ? `<input data-field="discountReason" value="${escapeAttr(member.discountReason)}">` : `<input disabled value="Restricted">`}</td>
       <td><textarea data-field="notes" rows="1">${escapeHtml(member.notes)}</textarea></td>
       <td>
         <select data-field="status">
           <option value="active" ${member.status === "active" ? "selected" : ""}>Active</option>
-          <option value="inactive" ${member.status === "inactive" ? "selected" : ""}>Inactive</option>
+          <option value="paused" ${member.status === "paused" ? "selected" : ""}>Paused</option>
+          <option value="cancelled" ${member.status === "cancelled" ? "selected" : ""}>Cancelled</option>
         </select>
       </td>
       <td><button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button></td>
@@ -655,9 +662,10 @@ async function saveSheetRow(id) {
   if (!row) return;
   const planSelect = row.querySelector('[data-field="planId"]');
   const selectedPlan = plans.find((plan) => plan.id === planSelect.value);
+  const existingMember = memberRecords.find((member) => member.id === id);
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
 
-  await patchRow("members", id, {
+  const changes = {
     full_name: value("name"),
     company: value("company") || null,
     phone: value("phone"),
@@ -667,13 +675,21 @@ async function saveSheetRow(id) {
     seats: Number(value("seats") || 1),
     joining_date: value("joiningDate"),
     renewal_date: value("renewalDate"),
-    standard_monthly_rate: Number(value("basePlanPrice") || 0),
-    offered_monthly_rate: Number(value("monthlyFee") || 0),
-    deposit_amount: Number(value("deposit") || 0),
-    discount_reason: value("discountReason") || null,
     notes: value("notes") || null,
     status: value("status") || "active"
-  });
+  };
+  if (canSeeRevenue()) {
+    changes.standard_monthly_rate = Number(value("basePlanPrice") || 0);
+    changes.offered_monthly_rate = Number(value("monthlyFee") || 0);
+    changes.deposit_amount = Number(value("deposit") || 0);
+    changes.discount_reason = value("discountReason") || null;
+  } else if (existingMember) {
+    changes.standard_monthly_rate = Number(existingMember.basePlanPrice || 0);
+    changes.offered_monthly_rate = Number(existingMember.monthlyFee || 0);
+    changes.deposit_amount = Number(existingMember.deposit || 0);
+    changes.discount_reason = existingMember.discountReason || null;
+  }
+  await patchRow("members", id, changes);
 }
 
 async function saveChangedSheetRows() {
@@ -723,6 +739,22 @@ async function createCashEntryFromForm(form, entryType) {
     amount: Number(data.get("amount") || 0),
     notes: data.get("notes") || null
   });
+}
+
+async function createPaymentCashEntry(member, amount, reference) {
+  try {
+    await insertRow("cash_ledger", {
+      entry_date: isoToday(),
+      entry_type: "receiving",
+      category: null,
+      source: member.plan || "Membership payment",
+      person_name: member.name,
+      amount,
+      notes: `Membership payment${reference ? ` - ${reference}` : ""}`
+    });
+  } catch (error) {
+    console.warn("Could not add payment to cash ledger", error);
+  }
 }
 
 async function saveCashRow(id) {
@@ -793,7 +825,7 @@ function renderLedger() {
   const groups = [
     ["Total room sales", `${roomSummary.occupied}/${roomSummary.capacity} capacity used (${roomSummary.utilization}%)`, roomSummary.revenue],
     ["Individual desk sales", `${deskSummaries.reduce((sum, summary) => sum + summary.occupied, 0)}/${deskSummaries.reduce((sum, summary) => sum + summary.capacity, 0)} desk capacity used`, deskSummaries.reduce((sum, summary) => sum + summary.revenue, 0)],
-    ["Collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.paidAmount || member.monthlyFee), 0)],
     ["Outstanding", `${outstanding.length} pending record${outstanding.length === 1 ? "" : "s"}`, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
     ["Previous unpaid", `${previousUnpaidCount} older invoice${previousUnpaidCount === 1 ? "" : "s"} unpaid`, previousUnpaidAmount],
     ["Deposits held", `${members.length} active record${members.length === 1 ? "" : "s"}`, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
@@ -941,19 +973,21 @@ function billingStandardForMember(member) {
   return Number(member.basePlanPrice || member.monthlyFee || 0);
 }
 
-function shouldShowDiscount(override = {}) {
-  return override.mode === "edited" || Boolean(override.showDiscount);
+function shouldShowDiscount(member, override = {}) {
+  return override.mode === "edited" || Boolean(override.showDiscount) || Boolean(member.discountReason);
 }
 
 function invoicePricing(member, override = {}) {
   const amount = Number(override.amount ?? member.monthlyFee);
   const tax = Number(override.tax ?? 0);
-  const showDiscount = shouldShowDiscount(override);
+  const quantity = Math.max(1, Number(override.seats ?? member.seats ?? 1));
+  const showDiscount = shouldShowDiscount(member, override);
   const standardPrice = showDiscount
     ? Number(override.standardPrice ?? billingStandardForMember(member) ?? amount)
     : amount;
   const discount = showDiscount ? Math.max(0, standardPrice - amount) : 0;
-  return { amount, tax, total: amount + tax, standardPrice, discount };
+  const unitPrice = Number(override.unitPrice ?? Math.round(standardPrice / quantity));
+  return { amount, tax, total: amount + tax, standardPrice, unitPrice, discount };
 }
 
 function receiptDateFor(member, override = {}) {
@@ -988,7 +1022,8 @@ async function markPaid(id) {
       status: "paid",
       amount: member.monthlyFee,
       receiptDate: member.membershipFrom,
-      validTill: member.validTill
+      validTill: member.validTill,
+      showDiscount: Boolean(member.discountReason)
     });
     await insertRow("payments", {
       invoice_id: invoice.id,
@@ -997,6 +1032,7 @@ async function markPaid(id) {
       payment_method: "cash",
       reference: invoice.invoice_number
     });
+    await createPaymentCashEntry(member, Number(member.monthlyFee), invoice.invoice_number);
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
     openInvoice(updatedMember, { mode: "receipt", invoiceId: invoice.invoice_number });
@@ -1007,7 +1043,7 @@ async function markPaid(id) {
 }
 
 async function createInvoice(member, override = {}) {
-  const { amount, tax, total, standardPrice, discount } = invoicePricing(member, override);
+  const { amount, tax, total, standardPrice, unitPrice, discount } = invoicePricing(member, override);
   const invoiceNumber = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
   const invoice = await insertRow("invoices", {
     invoice_number: invoiceNumber,
@@ -1027,7 +1063,7 @@ async function createInvoice(member, override = {}) {
     invoice_id: invoice.id,
     description: override.description || member.plan,
     quantity: Number(override.seats ?? member.seats),
-    unit_price: standardPrice,
+    unit_price: unitPrice,
     amount
   });
   return invoice;
@@ -1035,11 +1071,12 @@ async function createInvoice(member, override = {}) {
 
 function openInvoice(member, override = {}) {
   const invoiceId = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
-  const { amount, tax, total, standardPrice, discount } = invoicePricing(member, override);
+  const { amount, tax, total, standardPrice, unitPrice, discount } = invoicePricing(member, override);
   const invoiceTitle = override.title || (override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership");
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
   const issuedDate = receiptDateFor(member, override);
+  const issuedDateLabel = override.mode === "quick" ? "Receipt Date" : "Membership From";
   const validText = validityLabel(member, override);
   const description = override.description || member.plan;
   const quantity = Number(override.seats ?? member.seats);
@@ -1070,6 +1107,7 @@ function openInvoice(member, override = {}) {
   ].filter(Boolean);
 
   const amountCell = amount.toLocaleString("en-PK");
+  const unitCell = unitPrice.toLocaleString("en-PK");
   const standardCell = standardPrice.toLocaleString("en-PK");
   currentReceiptShare = {
     message,
@@ -1082,10 +1120,12 @@ function openInvoice(member, override = {}) {
       customerName: member.name,
       phone: member.phone,
       issuedDate,
+      issuedDateLabel,
       validText,
       description,
       quantity,
       standardPrice,
+      unitPrice,
       discount,
       amount,
       tax,
@@ -1105,7 +1145,7 @@ function openInvoice(member, override = {}) {
               <span>This ${override.mode === "edited" ? "invoice" : "receipt"} is addressed to:</span>
               <span><strong>Name:</strong> ${escapeHtml(member.name)}</span>
               <span><strong>Contact:</strong> ${escapeHtml(member.phone)}</span>
-              <span><strong>${override.mode === "quick" ? "Receipt Date" : "Membership From"}:</strong> ${formatDate(issuedDate)}</span>
+              <span><strong>${issuedDateLabel}:</strong> ${formatDate(issuedDate)}</span>
             </div>
           </div>
         </div>
@@ -1133,7 +1173,7 @@ function openInvoice(member, override = {}) {
           <tr>
             <td>${escapeHtml(description)}</td>
             <td>${String(quantity).padStart(2, "0")}</td>
-            <td>${standardCell}</td>
+            <td>${unitCell}</td>
             <td>${amountCell}</td>
           </tr>
           ${noteRows.map((row) => `
@@ -1186,7 +1226,7 @@ function openInvoice(member, override = {}) {
       </footer>
     </div>
   `;
-  els.whatsappReceipt.href = `https://wa.me/${cleanPhone(member.phone)}?text=${encodeURIComponent(message)}`;
+  els.whatsappReceipt.href = `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`;
   els.receiptDialog.showModal();
 }
 
@@ -1279,7 +1319,7 @@ function receiptPreviewFile() {
   ctx.font = "600 16px Arial, sans-serif";
   ctx.fillStyle = "#4d555a";
   ctx.fillText(`Contact: ${receipt.phone || "-"}`, 88, 314);
-  ctx.fillText(`Membership From: ${formatDate(receipt.issuedDate)}`, 88, 346);
+  ctx.fillText(`${receipt.issuedDateLabel}: ${formatDate(receipt.issuedDate)}`, 88, 346);
 
   const tableX = 88;
   const tableY = 430;
@@ -1300,7 +1340,7 @@ function receiptPreviewFile() {
   ctx.font = "700 17px Arial, sans-serif";
   drawWrappedText(ctx, receipt.description, tableX + 22, tableY + 96, 350, 23);
   ctx.fillText(String(receipt.quantity).padStart(2, "0"), tableX + 438, tableY + 96);
-  ctx.fillText(receipt.standardPrice.toLocaleString("en-PK"), tableX + 522, tableY + 96);
+  ctx.fillText(receipt.unitPrice.toLocaleString("en-PK"), tableX + 522, tableY + 96);
   ctx.fillText(receipt.amount.toLocaleString("en-PK"), tableX + 632, tableY + 96);
 
   let noteY = tableY + 190;
@@ -1415,6 +1455,15 @@ function cleanPhone(phone) {
   return String(phone).replace(/[^\d]/g, "");
 }
 
+function whatsappPhone(phone) {
+  const cleaned = cleanPhone(phone);
+  if (!cleaned) return "";
+  if (cleaned.startsWith("00")) return cleaned.slice(2);
+  if (cleaned.startsWith("0")) return `92${cleaned.slice(1)}`;
+  if (cleaned.length === 10 && cleaned.startsWith("3")) return `92${cleaned}`;
+  return cleaned;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1429,7 +1478,10 @@ function escapeAttr(value) {
 }
 
 function exportCsv() {
-  const headers = ["Name", "Company", "Phone", "Email", "Category", "Plan", "Seats", "Joining", "Renewal", "Standard Rate", "Offered Monthly Fee", "Discount", "Discount Reason", "Deposit", "Paid"];
+  const ownerExport = canSeeRevenue();
+  const headers = ownerExport
+    ? ["Name", "Company", "Phone", "Email", "Category", "Plan", "Seats", "Joining", "Renewal", "Standard Rate", "Offered Monthly Fee", "Discount", "Discount Reason", "Deposit", "Paid"]
+    : ["Name", "Company", "Phone", "Email", "Category", "Plan", "Seats", "Joining", "Renewal", "Paid"];
   const rows = members.map((member) => [
     member.name,
     member.company,
@@ -1440,11 +1492,13 @@ function exportCsv() {
     member.seats,
     member.joiningDate,
     member.renewalDate,
+    ...(ownerExport ? [
     billingStandardForMember(member) || member.monthlyFee,
     member.monthlyFee,
     member.discountReason ? Math.max(0, billingStandardForMember(member) - Number(member.monthlyFee)) : 0,
     member.discountReason,
-    member.deposit,
+    member.deposit
+    ] : []),
     member.paid ? "Yes" : "No"
   ]);
   const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell || "").replaceAll('"', '""')}"`).join(",")).join("\n");
@@ -1459,10 +1513,9 @@ function exportCsv() {
 
 function setDefaultDates() {
   const today = new Date();
-  const renewal = new Date(today);
-  renewal.setMonth(renewal.getMonth() + 1);
-  els.memberForm.elements.joiningDate.value = today.toISOString().slice(0, 10);
-  els.memberForm.elements.renewalDate.value = renewal.toISOString().slice(0, 10);
+  const renewal = addMonthsClamped(today, 1);
+  els.memberForm.elements.joiningDate.value = isoDate(today);
+  els.memberForm.elements.renewalDate.value = isoDate(renewal);
   els.expenseForm.elements.entryDate.value = isoToday();
   els.receivingForm.elements.entryDate.value = isoToday();
 }
@@ -1523,17 +1576,33 @@ function quickValidity(service, quantity) {
   };
 }
 
-function generateQuickInvoice() {
+async function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
   const quantity = Math.max(1, Number(data.get("quantity") || 1));
   const amount = service.rate * quantity;
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
+  const customer = {
+    name: data.get("name"),
+    phone: data.get("phone")
+  };
+  await insertRow("cash_ledger", {
+    entry_date: isoToday(),
+    entry_type: "receiving",
+    category: null,
+    source: service.label,
+    person_name: customer.name,
+    amount,
+    notes: [
+      customer.phone ? `Contact: ${customer.phone}` : "",
+      note
+    ].filter(Boolean).join(" | ") || null
+  });
   openInvoice({
     id: `quick-${Date.now()}`,
-    name: data.get("name"),
-    phone: data.get("phone"),
+    name: customer.name,
+    phone: customer.phone,
     company: "Walk-in / temporary receipt",
     plan: service.label,
     seats: quantity,
@@ -1548,6 +1617,7 @@ function generateQuickInvoice() {
     description: `${service.label} - ${quantity} ${service.unitName}`,
     seats: quantity,
     standardPrice: amount,
+    unitPrice: service.rate,
     amount,
     ...validity,
     note
@@ -1636,8 +1706,10 @@ els.memberSheet.addEventListener("change", (event) => {
   if (event.target.dataset.field === "planId") {
     const selected = event.target.selectedOptions[0];
     row.querySelector('[data-field="seats"]').value = selected.dataset.seats;
-    row.querySelector('[data-field="basePlanPrice"]').value = selected.dataset.price;
-    row.querySelector('[data-field="monthlyFee"]').value = selected.dataset.price;
+    if (canSeeRevenue()) {
+      row.querySelector('[data-field="basePlanPrice"]').value = selected.dataset.price;
+      row.querySelector('[data-field="monthlyFee"]').value = selected.dataset.price;
+    }
   }
   markSheetRowDirty(row);
 });
@@ -1685,9 +1757,18 @@ els.memberForm.addEventListener("submit", async (event) => {
   }
 });
 
-els.quickInvoiceForm.addEventListener("submit", (event) => {
+els.quickInvoiceForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  generateQuickInvoice();
+  try {
+    setSyncStatus("Saving", "busy");
+    await generateQuickInvoice();
+    els.quickInvoiceForm.reset();
+    syncQuickInvoiceFields();
+    await loadData();
+  } catch (error) {
+    alert(`Could not generate quick receipt: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
 });
 
 els.expenseForm.addEventListener("submit", async (event) => {
