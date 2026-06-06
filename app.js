@@ -1790,8 +1790,45 @@ function receiptCanvasFallbackFile() {
 }
 
 async function shareReceiptToWhatsapp(event) {
-  if (!navigator.share || !navigator.canShare) return;
   event.preventDefault();
+  const originalText = els.whatsappReceipt.textContent;
+  els.whatsappReceipt.textContent = "Sending PDF...";
+  els.whatsappReceipt.setAttribute("aria-busy", "true");
+  try {
+    const response = await fetch("/api/send-receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: currentReceiptShare.receipt?.phone,
+        message: currentReceiptShare.message,
+        fileName: currentReceiptShare.fileName.replace(/\.png$/i, ".pdf"),
+        receipt: currentReceiptShare.receipt
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) {
+      els.whatsappReceipt.textContent = "PDF sent";
+      window.setTimeout(() => {
+        els.whatsappReceipt.textContent = originalText;
+        els.whatsappReceipt.removeAttribute("aria-busy");
+      }, 1800);
+      return;
+    }
+    if (response.status !== 501) {
+      throw new Error(payload.error || "Could not send WhatsApp PDF.");
+    }
+    console.warn("WhatsApp PDF API is not configured yet", payload);
+  } catch (error) {
+    console.warn("Direct WhatsApp PDF send failed", error);
+  }
+
+  els.whatsappReceipt.textContent = "Opening share...";
+  els.whatsappReceipt.removeAttribute("aria-busy");
+  if (!navigator.share || !navigator.canShare) {
+    window.open(els.whatsappReceipt.href, "_blank", "noopener,noreferrer");
+    els.whatsappReceipt.textContent = originalText;
+    return;
+  }
   try {
     const file = await receiptPreviewFile();
     if (navigator.canShare({ files: [file] })) {
@@ -1800,12 +1837,15 @@ async function shareReceiptToWhatsapp(event) {
         text: currentReceiptShare.message,
         files: [file]
       });
+      els.whatsappReceipt.textContent = originalText;
       return;
     }
   } catch (error) {
     console.warn("Receipt image sharing failed", error);
   }
   window.open(els.whatsappReceipt.href, "_blank", "noopener,noreferrer");
+  els.whatsappReceipt.textContent = originalText;
+  els.whatsappReceipt.removeAttribute("aria-busy");
 }
 
 function openReceipt(member) {
