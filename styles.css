@@ -637,7 +637,7 @@ h2 {
 .sheet-table td:nth-child(10),
 .sheet-table td:nth-child(11),
 .sheet-table td:nth-child(14),
-.sheet-table td:nth-child(15) {
+.sheet-table td:nth-child(16) {
   min-width: 92px;
 }
 
@@ -648,6 +648,43 @@ h2 {
 
 .staff-form {
   margin-top: 16px;
+}
+
+.plan-lines-editor {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.plan-lines-editor .section-heading.row {
+  margin-bottom: 12px;
+}
+
+.plan-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-line-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(74px, 0.45fr) minmax(110px, 0.75fr) minmax(110px, 0.75fr) 42px;
+  gap: 8px;
+  align-items: end;
+}
+
+.plan-line-row label {
+  min-width: 0;
+}
+
+.plan-line-remove {
+  min-height: 42px;
+  padding: 0;
+}
+
+.sheet-plan-lines {
+  min-width: 280px;
 }
 
 .form-hint {
@@ -1280,6 +1317,14 @@ label textarea {
   .cash-entry-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .plan-line-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .plan-line-row label:first-child {
+    grid-column: 1 / -1;
   }
 
   .search {

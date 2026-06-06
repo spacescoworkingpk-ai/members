@@ -41,6 +41,20 @@ create table if not exists public.members (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.member_plan_items (
+  id uuid primary key default gen_random_uuid(),
+  member_id uuid not null references public.members(id) on delete cascade,
+  plan_id uuid references public.plans(id),
+  plan_name text not null,
+  category text not null check (category in ('individual', 'room')),
+  seats integer not null default 1 check (seats > 0),
+  standard_monthly_rate integer not null default 0 check (standard_monthly_rate >= 0),
+  offered_monthly_rate integer not null default 0 check (offered_monthly_rate >= 0),
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.invoices (
   id uuid primary key default gen_random_uuid(),
   invoice_number text not null unique,
@@ -169,6 +183,11 @@ create trigger members_set_updated_at
 before update on public.members
 for each row execute function public.set_updated_at();
 
+drop trigger if exists member_plan_items_set_updated_at on public.member_plan_items;
+create trigger member_plan_items_set_updated_at
+before update on public.member_plan_items
+for each row execute function public.set_updated_at();
+
 drop trigger if exists invoices_set_updated_at on public.invoices;
 create trigger invoices_set_updated_at
 before update on public.invoices
@@ -206,6 +225,7 @@ where name in ('Cubicle', 'Room 5', 'Room 7', 'Room 7 Plus', 'Room 11', 'Executi
 alter table public.staff_profiles enable row level security;
 alter table public.plans enable row level security;
 alter table public.members enable row level security;
+alter table public.member_plan_items enable row level security;
 alter table public.invoices enable row level security;
 alter table public.invoice_items enable row level security;
 alter table public.payments enable row level security;
@@ -286,6 +306,31 @@ with check (public.is_active_staff());
 drop policy if exists "Staff can delete members" on public.members;
 create policy "Staff can delete members"
 on public.members for delete
+to authenticated
+using (public.is_active_staff());
+
+drop policy if exists "Staff can read member plan items" on public.member_plan_items;
+create policy "Staff can read member plan items"
+on public.member_plan_items for select
+to authenticated
+using (public.is_active_staff());
+
+drop policy if exists "Staff can insert member plan items" on public.member_plan_items;
+create policy "Staff can insert member plan items"
+on public.member_plan_items for insert
+to authenticated
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can update member plan items" on public.member_plan_items;
+create policy "Staff can update member plan items"
+on public.member_plan_items for update
+to authenticated
+using (public.is_active_staff())
+with check (public.is_active_staff());
+
+drop policy if exists "Staff can delete member plan items" on public.member_plan_items;
+create policy "Staff can delete member plan items"
+on public.member_plan_items for delete
 to authenticated
 using (public.is_active_staff());
 

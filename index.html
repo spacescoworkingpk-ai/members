@@ -238,6 +238,16 @@
               <label>Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
               <label class="span-two">Notes<textarea name="notes" rows="3" placeholder="Access card, office number, custom terms"></textarea></label>
             </div>
+            <div class="plan-lines-editor">
+              <div class="section-heading row">
+                <div>
+                  <p class="eyebrow">Plan bundle</p>
+                  <h2>Monthly invoice lines</h2>
+                </div>
+                <button class="ghost-button" id="addPlanLine" type="button">Add plan line</button>
+              </div>
+              <div class="plan-lines" id="memberPlanLines"></div>
+            </div>
             <div class="rate-summary" id="rateSummary"></div>
             <div class="modal-actions inline-actions">
               <button class="ghost-button" id="resetMemberForm" type="reset">Clear</button>
@@ -274,6 +284,7 @@
                   <th>Phone</th>
                   <th>Email</th>
                   <th>Plan</th>
+                  <th>Plan bundle</th>
                   <th>Seats</th>
                   <th>Joining</th>
                   <th>Renewal</th>

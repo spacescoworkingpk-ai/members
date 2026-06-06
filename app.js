@@ -67,13 +67,16 @@ const expenseCategories = [
 let plans = [];
 let members = [];
 let memberRecords = [];
+let memberPlanItems = [];
 let invoices = [];
 let payments = [];
 let cashEntries = [];
 let cashLedgerReady = true;
+let memberPlanItemsReady = true;
 let staffProfile = null;
 let session = loadSession();
 let lastAutoRefreshAt = 0;
+let memberFormPlanLines = [];
 let currentReceiptShare = {
   message: "",
   fileName: "spaces-receipt.png",
@@ -120,6 +123,8 @@ const els = {
   memberForm: document.querySelector("#memberForm"),
   resetMemberForm: document.querySelector("#resetMemberForm"),
   planSelect: document.querySelector("#planSelect"),
+  addPlanLine: document.querySelector("#addPlanLine"),
+  memberPlanLines: document.querySelector("#memberPlanLines"),
   rateSummary: document.querySelector("#rateSummary"),
   quickInvoiceForm: document.querySelector("#quickInvoiceForm"),
   quickService: document.querySelector("#quickService"),
@@ -242,6 +247,13 @@ async function patchRow(table, id, row) {
   return rows[0];
 }
 
+async function deleteRows(table, query) {
+  return supabaseRequest(`/rest/v1/${table}?${query}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  });
+}
+
 async function loadStaffProfile() {
   const userId = session?.user?.id;
   if (!userId) throw new Error("Staff login required");
@@ -272,6 +284,14 @@ async function loadData() {
   plans = planRows.map(mapPlan);
   invoices = invoiceRows;
   payments = paymentRows;
+  try {
+    memberPlanItems = await selectRows("member_plan_items", "select=*&order=sort_order.asc,created_at.asc");
+    memberPlanItemsReady = true;
+  } catch (error) {
+    memberPlanItems = [];
+    memberPlanItemsReady = false;
+    console.warn("member_plan_items unavailable", error);
+  }
   memberRecords = memberRows.map(mapMember);
   members = memberRecords.filter((member) => member.status === "active");
   renderPlans();
@@ -293,8 +313,96 @@ function mapPlan(row) {
   };
 }
 
+function mapMemberPlanItem(row) {
+  const plan = plans.find((item) => item.id === row.plan_id || item.name === row.plan_name);
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    planId: row.plan_id,
+    planName: row.plan_name,
+    category: row.category || plan?.category || inferPlanCategory(row.plan_name),
+    seats: Number(row.seats || plan?.seats || 1),
+    standardRate: Number(row.standard_monthly_rate || plan?.price || 0),
+    offeredRate: Number(row.offered_monthly_rate || 0),
+    sortOrder: Number(row.sort_order || 0)
+  };
+}
+
+function derivedPlanItems(row, plan) {
+  return [{
+    id: `${row.id}-primary`,
+    memberId: row.id,
+    planId: row.plan_id,
+    planName: row.plan_name,
+    category: plan?.category || inferPlanCategory(row.plan_name),
+    seats: Number(row.seats || 1),
+    standardRate: Number(row.standard_monthly_rate || 0),
+    offeredRate: Number(row.offered_monthly_rate || 0),
+    sortOrder: 0
+  }];
+}
+
+function planItemsLabel(items) {
+  if (!items.length) return "No plan";
+  if (items.length === 1) return items[0].planName;
+  return items.map((item) => `${item.seats} ${item.planName}`).join(" + ");
+}
+
+function formatPlanLines(items) {
+  return (items || []).map((item) => [
+    item.planName,
+    item.seats,
+    item.standardRate,
+    item.offeredRate
+  ].join(" | ")).join("\n");
+}
+
+function parsePlanLines(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [planNameRaw, seatsRaw, standardRaw, offeredRaw] = line.split("|").map((part) => part?.trim());
+      const planName = planNameRaw || "";
+      const plan = plans.find((item) => item.name.toLowerCase() === planName.toLowerCase());
+      const seats = Math.max(1, Number(seatsRaw || plan?.seats || 1));
+      const standardRate = Number(standardRaw || plan?.price || 0);
+      const offeredRate = Number(offeredRaw || standardRate);
+      return {
+        planId: plan?.id || null,
+        planName: plan?.name || planName,
+        category: plan?.category || inferPlanCategory(planName),
+        seats,
+        standardRate,
+        offeredRate,
+        sortOrder: index
+      };
+    });
+}
+
+function serializePlanLineForDb(item, memberId, index) {
+  return {
+    member_id: memberId,
+    plan_id: item.planId || null,
+    plan_name: item.planName,
+    category: item.category || inferPlanCategory(item.planName),
+    seats: Number(item.seats || 1),
+    standard_monthly_rate: Number(item.standardRate || 0),
+    offered_monthly_rate: Number(item.offeredRate || 0),
+    sort_order: index
+  };
+}
+
 function mapMember(row) {
   const plan = plans.find((item) => item.id === row.plan_id || item.name === row.plan_name);
+  const planItems = memberPlanItems
+    .filter((item) => item.member_id === row.id)
+    .map(mapMemberPlanItem);
+  const activePlanItems = planItems.length ? planItems : derivedPlanItems(row, plan);
+  const totalSeats = activePlanItems.reduce((sum, item) => sum + Number(item.seats || 0), 0);
+  const standardRate = activePlanItems.reduce((sum, item) => sum + Number(item.standardRate || 0), 0);
+  const offeredRate = activePlanItems.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
   const cycle = membershipCycle(row);
   const memberInvoices = invoices.filter((invoice) => invoice.member_id === row.id);
   const paidInvoice = memberInvoices.find((invoice) => invoice.status === "paid" && invoice.valid_till === cycle.validTill);
@@ -309,15 +417,17 @@ function mapMember(row) {
     phone: row.phone,
     email: row.email,
     planId: row.plan_id,
-    plan: row.plan_name,
-    planCategory: plan?.category || inferPlanCategory(row.plan_name),
-    seats: row.seats,
+    plan: planItemsLabel(activePlanItems),
+    primaryPlanName: row.plan_name,
+    planCategory: activePlanItems.some((item) => item.category === "room") ? "room" : activePlanItems[0]?.category || plan?.category || inferPlanCategory(row.plan_name),
+    planItems: activePlanItems,
+    seats: totalSeats || row.seats,
     joiningDate: row.joining_date,
     renewalDate: row.renewal_date,
     membershipFrom: cycle.from,
     validTill: cycle.validTill,
-    basePlanPrice: row.standard_monthly_rate,
-    monthlyFee: row.offered_monthly_rate,
+    basePlanPrice: standardRate || row.standard_monthly_rate,
+    monthlyFee: offeredRate || row.offered_monthly_rate,
     deposit: row.deposit_amount,
     discountReason: row.discount_reason,
     notes: row.notes,
@@ -443,6 +553,23 @@ function memberCategory(member) {
   return { key: "other", label: "Other" };
 }
 
+function planItemCategory(item) {
+  if (item.category === "room" || inferPlanCategory(item.planName) === "room") return { key: "rooms", label: "Rooms" };
+  if (/flexible/i.test(item.planName)) return { key: "flexible", label: "Flexible Desk" };
+  if (/dedicated/i.test(item.planName)) return { key: "dedicated", label: "Dedicated Desk" };
+  if (/personal/i.test(item.planName)) return { key: "personal", label: "Personal Desk" };
+  return { key: "other", label: "Other" };
+}
+
+function memberHasCategory(member, key) {
+  return (member.planItems || []).some((item) => planItemCategory(item).key === key);
+}
+
+function memberCategoryLabel(member) {
+  const labels = [...new Set((member.planItems || []).map((item) => planItemCategory(item).label))];
+  return labels.length ? labels.join(" + ") : memberCategory(member).label;
+}
+
 function roomCapacity() {
   return plans
     .filter((plan) => plan.category === "room")
@@ -475,9 +602,11 @@ function categorySummaries() {
   ];
 
   return categories.map((category) => {
-    const categoryMembers = members.filter((member) => memberCategory(member).key === category.key);
-    const occupied = categoryMembers.reduce((sum, member) => sum + Number(member.seats || 0), 0);
-    const revenue = categoryMembers.reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0);
+    const categoryItems = members.flatMap((member) => (member.planItems || [])
+      .filter((item) => planItemCategory(item).key === category.key));
+    const categoryMembers = members.filter((member) => memberHasCategory(member, category.key));
+    const occupied = categoryItems.reduce((sum, item) => sum + Number(item.seats || 0), 0);
+    const revenue = categoryItems.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
     return {
       ...category,
       members: categoryMembers,
@@ -523,7 +652,8 @@ function renderMetrics() {
 function renderMembers() {
   const query = els.memberSearch.value.trim().toLowerCase();
   const filtered = members.filter((member) => {
-    const haystack = `${member.name} ${member.company || ""} ${member.phone} ${member.plan}`.toLowerCase();
+    const lineText = (member.planItems || []).map((item) => `${item.planName} ${item.offeredRate}`).join(" ");
+    const haystack = `${member.name} ${member.company || ""} ${member.phone} ${member.plan} ${lineText}`.toLowerCase();
     return haystack.includes(query);
   });
 
@@ -536,11 +666,12 @@ function renderMembers() {
 
   const rows = groups.map((group) => {
     const groupMembers = filtered
-      .filter((member) => memberCategory(member).key === group.key)
+      .filter((member) => memberHasCategory(member, group.key))
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!groupMembers.length) return "";
-    const occupied = groupMembers.reduce((sum, member) => sum + Number(member.seats || 0), 0);
-    const revenue = groupMembers.reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0);
+    const groupItems = groupMembers.flatMap((member) => member.planItems.filter((item) => planItemCategory(item).key === group.key));
+    const occupied = groupItems.reduce((sum, item) => sum + Number(item.seats || 0), 0);
+    const revenue = groupItems.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
     return `
       <tr class="member-group-row">
         <td colspan="8">
@@ -550,12 +681,12 @@ function renderMembers() {
       </tr>
       ${groupMembers.map((member) => {
         const state = paymentState(member);
-        const category = memberCategory(member);
+        const lineSummary = (member.planItems || []).map((item) => `${item.seats} ${item.planName}${canSeeRevenue() ? ` @ ${fmt.format(item.offeredRate)}` : ""}`).join(" | ");
         return `
       <tr>
         <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
-        <td><span class="category-label">${escapeHtml(category.label)}</span></td>
-        <td><strong>${escapeHtml(member.plan)}</strong><span>${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}</span></td>
+        <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span></td>
+        <td><strong>${escapeHtml(member.plan)}</strong><span>${escapeHtml(lineSummary || `${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}`)}</span></td>
         <td>${formatDate(member.joiningDate)}</td>
         <td>${formatDate(member.validTill)}</td>
         <td>${canSeeRevenue() ? rateLabel(member) : "Restricted"}</td>
@@ -603,6 +734,9 @@ function renderSheetEditor() {
           `).join("")}
         </select>
       </td>
+      <td>${canSeeRevenue()
+        ? `<textarea class="sheet-plan-lines" data-field="planLines" rows="3" placeholder="Plan | seats | standard | offered">${escapeHtml(formatPlanLines(member.planItems))}</textarea>`
+        : `<textarea class="sheet-plan-lines" disabled rows="3">Restricted</textarea>`}</td>
       <td><input required data-field="seats" type="number" min="1" value="${Number(member.seats || 1)}"></td>
       <td><input required data-field="joiningDate" type="date" value="${escapeAttr(member.joiningDate)}"></td>
       <td><input required data-field="renewalDate" type="date" value="${escapeAttr(member.renewalDate)}"></td>
@@ -620,7 +754,7 @@ function renderSheetEditor() {
       </td>
       <td><button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button></td>
     </tr>
-  `).join("") : `<tr><td colspan="15">No records found.</td></tr>`;
+  `).join("") : `<tr><td colspan="16">No records found.</td></tr>`;
   updateSheetMessage();
 }
 
@@ -664,23 +798,38 @@ async function saveSheetRow(id) {
   const selectedPlan = plans.find((plan) => plan.id === planSelect.value);
   const existingMember = memberRecords.find((member) => member.id === id);
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
+  const editedPlanLines = canSeeRevenue()
+    ? parsePlanLines(value("planLines") || "")
+    : existingMember?.planItems || [];
+  const primaryPlanLine = editedPlanLines[0] || {
+    planId: selectedPlan?.id || null,
+    planName: selectedPlan?.name || planSelect.selectedOptions[0]?.dataset.name || value("plan"),
+    category: selectedPlan?.category || inferPlanCategory(selectedPlan?.name),
+    seats: Number(value("seats") || 1),
+    standardRate: Number(value("basePlanPrice") || selectedPlan?.price || 0),
+    offeredRate: Number(value("monthlyFee") || selectedPlan?.price || 0),
+    sortOrder: 0
+  };
+  const totalSeats = editedPlanLines.reduce((sum, item) => sum + Number(item.seats || 0), 0) || Number(value("seats") || 1);
+  const totalStandard = editedPlanLines.reduce((sum, item) => sum + Number(item.standardRate || 0), 0);
+  const totalOffered = editedPlanLines.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
 
   const changes = {
     full_name: value("name"),
     company: value("company") || null,
     phone: value("phone"),
     email: value("email") || null,
-    plan_id: selectedPlan?.id || null,
-    plan_name: selectedPlan?.name || planSelect.selectedOptions[0]?.dataset.name || value("plan"),
-    seats: Number(value("seats") || 1),
+    plan_id: primaryPlanLine.planId || selectedPlan?.id || null,
+    plan_name: primaryPlanLine.planName,
+    seats: totalSeats,
     joining_date: value("joiningDate"),
     renewal_date: value("renewalDate"),
     notes: value("notes") || null,
     status: value("status") || "active"
   };
   if (canSeeRevenue()) {
-    changes.standard_monthly_rate = Number(value("basePlanPrice") || 0);
-    changes.offered_monthly_rate = Number(value("monthlyFee") || 0);
+    changes.standard_monthly_rate = totalStandard || Number(value("basePlanPrice") || 0);
+    changes.offered_monthly_rate = totalOffered || Number(value("monthlyFee") || 0);
     changes.deposit_amount = Number(value("deposit") || 0);
     changes.discount_reason = value("discountReason") || null;
   } else if (existingMember) {
@@ -690,6 +839,9 @@ async function saveSheetRow(id) {
     changes.discount_reason = existingMember.discountReason || null;
   }
   await patchRow("members", id, changes);
+  if (canSeeRevenue()) {
+    await replaceMemberPlanItems(id, editedPlanLines.length ? editedPlanLines : [primaryPlanLine]);
+  }
 }
 
 async function saveChangedSheetRows() {
@@ -755,6 +907,17 @@ async function createPaymentCashEntry(member, amount, reference) {
   } catch (error) {
     console.warn("Could not add payment to cash ledger", error);
   }
+}
+
+async function replaceMemberPlanItems(memberId, items) {
+  if (!memberPlanItemsReady) return;
+  await deleteRows("member_plan_items", `member_id=eq.${encodeURIComponent(memberId)}`);
+  if (!items.length) return;
+  await supabaseRequest("/rest/v1/member_plan_items", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: items.map((item, index) => serializePlanLineForDb(item, memberId, index))
+  });
 }
 
 async function saveCashRow(id) {
@@ -946,6 +1109,75 @@ function renderPlans() {
   `).join("");
 }
 
+function planOptionHtml(selectedPlanName) {
+  return plans.map((plan) => `
+    <option value="${escapeAttr(plan.name)}" data-id="${plan.id}" data-category="${plan.category}" data-seats="${plan.seats}" data-price="${plan.price}" ${plan.name === selectedPlanName ? "selected" : ""}>${escapeHtml(plan.name)}</option>
+  `).join("");
+}
+
+function selectedPlanLineFromMainForm() {
+  const selected = els.planSelect.options[els.planSelect.selectedIndex];
+  return {
+    planId: selected?.dataset.id || null,
+    planName: selected?.value || "",
+    category: plans.find((plan) => plan.id === selected?.dataset.id)?.category || inferPlanCategory(selected?.value),
+    seats: Number(els.memberForm.elements.seats.value || selected?.dataset.seats || 1),
+    standardRate: Number(els.memberForm.elements.basePlanPrice.value || selected?.dataset.price || 0),
+    offeredRate: Number(els.memberForm.elements.monthlyFee.value || selected?.dataset.price || 0),
+    sortOrder: 0
+  };
+}
+
+function syncMainFormFromPlanLines() {
+  if (!memberFormPlanLines.length) return;
+  const primary = memberFormPlanLines[0];
+  const totalSeats = memberFormPlanLines.reduce((sum, line) => sum + Number(line.seats || 0), 0);
+  const totalStandard = memberFormPlanLines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0);
+  const totalOffered = memberFormPlanLines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0);
+  els.planSelect.value = primary.planName;
+  els.memberForm.elements.seats.value = totalSeats;
+  els.memberForm.elements.basePlanPrice.value = totalStandard;
+  els.memberForm.elements.monthlyFee.value = totalOffered;
+}
+
+function renderMemberPlanLines() {
+  if (!els.memberPlanLines) return;
+  els.memberPlanLines.innerHTML = memberFormPlanLines.map((line, index) => `
+    <div class="plan-line-row" data-plan-line="${index}">
+      <label>Plan
+        <select data-field="bundlePlan">${planOptionHtml(line.planName)}</select>
+      </label>
+      <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${Number(line.seats || 1)}"></label>
+      <label>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${Number(line.standardRate || 0)}"></label>
+      <label>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${Number(line.offeredRate || 0)}"></label>
+      <button class="ghost-button plan-line-remove" data-action="remove-plan-line" data-index="${index}" type="button" aria-label="Remove plan line">x</button>
+    </div>
+  `).join("");
+  syncMainFormFromPlanLines();
+  renderRateSummary();
+}
+
+function updateMemberFormPlanLine(index, field, value) {
+  const line = memberFormPlanLines[index];
+  if (!line) return;
+  if (field === "bundlePlan") {
+    const plan = plans.find((item) => item.name === value);
+    line.planId = plan?.id || null;
+    line.planName = plan?.name || value;
+    line.category = plan?.category || inferPlanCategory(value);
+    line.seats = Number(plan?.seats || line.seats || 1);
+    line.standardRate = Number(plan?.price || line.standardRate || 0);
+    line.offeredRate = Number(plan?.price || line.offeredRate || 0);
+    renderMemberPlanLines();
+    return;
+  }
+  if (field === "bundleSeats") line.seats = Math.max(1, Number(value || 1));
+  if (field === "bundleStandard") line.standardRate = Number(value || 0);
+  if (field === "bundleOffered") line.offeredRate = Number(value || 0);
+  syncMainFormFromPlanLines();
+  renderRateSummary();
+}
+
 function renderBars() {
   const summaries = categorySummaries();
   els.planBarsTitle.textContent = canSeeRevenue() ? "Occupancy and revenue mix" : "Occupancy mix";
@@ -988,6 +1220,27 @@ function invoicePricing(member, override = {}) {
   const discount = showDiscount ? Math.max(0, standardPrice - amount) : 0;
   const unitPrice = Number(override.unitPrice ?? Math.round(standardPrice / quantity));
   return { amount, tax, total: amount + tax, standardPrice, unitPrice, discount };
+}
+
+function invoiceLines(member, override = {}) {
+  if (override.lines?.length) return override.lines;
+  if (override.mode === "quick" || override.mode === "edited" || override.description) {
+    const quantity = Math.max(1, Number(override.seats ?? member.seats ?? 1));
+    const { amount, unitPrice } = invoicePricing(member, override);
+    return [{
+      description: override.description || member.plan,
+      quantity,
+      unitPrice,
+      amount
+    }];
+  }
+  return (member.planItems || []).map((item) => ({
+    description: item.planName,
+    quantity: Number(item.seats || 1),
+    unitPrice: Math.round(Number(item.offeredRate || 0) / Math.max(1, Number(item.seats || 1))),
+    amount: Number(item.offeredRate || 0),
+    standardAmount: Number(item.standardRate || 0)
+  }));
 }
 
 function receiptDateFor(member, override = {}) {
@@ -1044,6 +1297,7 @@ async function markPaid(id) {
 
 async function createInvoice(member, override = {}) {
   const { amount, tax, total, standardPrice, unitPrice, discount } = invoicePricing(member, override);
+  const lines = invoiceLines(member, override);
   const invoiceNumber = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
   const invoice = await insertRow("invoices", {
     invoice_number: invoiceNumber,
@@ -1059,12 +1313,16 @@ async function createInvoice(member, override = {}) {
     status: override.status || "sent",
     edit_note: override.note || null
   });
-  await insertRow("invoice_items", {
-    invoice_id: invoice.id,
-    description: override.description || member.plan,
-    quantity: Number(override.seats ?? member.seats),
-    unit_price: unitPrice,
-    amount
+  await supabaseRequest("/rest/v1/invoice_items", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: lines.map((line) => ({
+      invoice_id: invoice.id,
+      description: line.description,
+      quantity: Number(line.quantity || 1),
+      unit_price: Number(line.unitPrice ?? unitPrice),
+      amount: Number(line.amount || 0)
+    }))
   });
   return invoice;
 }
@@ -1080,6 +1338,10 @@ function openInvoice(member, override = {}) {
   const validText = validityLabel(member, override);
   const description = override.description || member.plan;
   const quantity = Number(override.seats ?? member.seats);
+  const lines = invoiceLines(member, override);
+  const serviceText = lines.length > 1
+    ? lines.map((line) => `${line.description}: ${line.quantity} x ${fmt.format(line.unitPrice)} = ${fmt.format(line.amount)}`).join("\n")
+    : description;
   const customerLabel = override.mode === "quick" ? "Customer" : "Member";
   const shareTitle = override.mode === "edited" ? "Spaces Coworking Invoice" : "Spaces Coworking Receipt";
   const message = [
@@ -1087,8 +1349,8 @@ function openInvoice(member, override = {}) {
     `${invoiceLabel} ${invoiceId}`,
     `${customerLabel}: ${member.name}`,
     member.phone ? `Contact: ${member.phone}` : "",
-    `Service: ${description}`,
-    quantity > 1 ? `Quantity: ${quantity}` : "",
+    `Service: ${serviceText}`,
+    lines.length === 1 && quantity > 1 ? `Quantity: ${quantity}` : "",
     discount ? `Standard rate: ${fmt.format(standardPrice)}` : "",
     discount ? `Discount: ${fmt.format(discount)}` : "",
     `Total amount: ${fmt.format(total)}`,
@@ -1106,8 +1368,6 @@ function openInvoice(member, override = {}) {
     discount ? `Discount: ${fmt.format(discount)}${override.note ? ` - ${override.note}` : ""}` : ""
   ].filter(Boolean);
 
-  const amountCell = amount.toLocaleString("en-PK");
-  const unitCell = unitPrice.toLocaleString("en-PK");
   const standardCell = standardPrice.toLocaleString("en-PK");
   currentReceiptShare = {
     message,
@@ -1124,6 +1384,7 @@ function openInvoice(member, override = {}) {
       validText,
       description,
       quantity,
+      lines,
       standardPrice,
       unitPrice,
       discount,
@@ -1170,12 +1431,14 @@ function openInvoice(member, override = {}) {
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>${escapeHtml(description)}</td>
-            <td>${String(quantity).padStart(2, "0")}</td>
-            <td>${unitCell}</td>
-            <td>${amountCell}</td>
-          </tr>
+          ${lines.map((line) => `
+            <tr>
+              <td>${escapeHtml(line.description)}</td>
+              <td>${String(line.quantity).padStart(2, "0")}</td>
+              <td>${Number(line.unitPrice).toLocaleString("en-PK")}</td>
+              <td>${Number(line.amount).toLocaleString("en-PK")}</td>
+            </tr>
+          `).join("")}
           ${noteRows.map((row) => `
             <tr>
               <td>${escapeHtml(row)}</td>
@@ -1636,19 +1899,25 @@ function syncPlanFields() {
     els.rateSummary.innerHTML = `<strong>Plans unavailable:</strong> Run the Supabase schema and refresh.`;
     return;
   }
-  els.memberForm.elements.seats.value = selected.dataset.seats;
-  els.memberForm.elements.basePlanPrice.value = selected.dataset.price;
-  els.memberForm.elements.monthlyFee.value = selected.dataset.price;
-  renderRateSummary();
+  memberFormPlanLines = [{
+    planId: selected.dataset.id,
+    planName: selected.value,
+    category: plans.find((plan) => plan.id === selected.dataset.id)?.category || inferPlanCategory(selected.value),
+    seats: Number(selected.dataset.seats || 1),
+    standardRate: Number(selected.dataset.price || 0),
+    offeredRate: Number(selected.dataset.price || 0),
+    sortOrder: 0
+  }];
+  renderMemberPlanLines();
 }
 
 function renderRateSummary() {
-  const basePrice = Number(els.memberForm.elements.basePlanPrice.value || 0);
-  const offeredPrice = Number(els.memberForm.elements.monthlyFee.value || 0);
+  const basePrice = memberFormPlanLines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0) || Number(els.memberForm.elements.basePlanPrice.value || 0);
+  const offeredPrice = memberFormPlanLines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0) || Number(els.memberForm.elements.monthlyFee.value || 0);
   const discount = Math.max(0, basePrice - offeredPrice);
   els.rateSummary.innerHTML = discount
-    ? `<strong>Discounted signup:</strong> ${fmt.format(offeredPrice)} offered instead of ${fmt.format(basePrice)}. Monthly discount ${fmt.format(discount)}.`
-    : `<strong>Standard signup:</strong> Offered rate matches the selected plan.`;
+    ? `<strong>Discounted signup:</strong> ${memberFormPlanLines.length} invoice line${memberFormPlanLines.length === 1 ? "" : "s"}, ${fmt.format(offeredPrice)} offered instead of ${fmt.format(basePrice)}. Monthly discount ${fmt.format(discount)}.`
+    : `<strong>Standard signup:</strong> ${memberFormPlanLines.length} invoice line${memberFormPlanLines.length === 1 ? "" : "s"} totaling ${fmt.format(offeredPrice)}.`;
 }
 
 function syncQuickInvoiceFields() {
@@ -1736,23 +2005,28 @@ async function generateQuickInvoice() {
 
 async function createMemberFromForm() {
   const data = new FormData(els.memberForm);
-  const selected = els.planSelect.options[els.planSelect.selectedIndex];
+  const lines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
+  const primary = lines[0];
+  const totalSeats = lines.reduce((sum, line) => sum + Number(line.seats || 0), 0);
+  const totalStandard = lines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0);
+  const totalOffered = lines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0);
   const row = await insertRow("members", {
     full_name: data.get("name"),
     company: data.get("company") || null,
     phone: data.get("phone"),
     email: data.get("email") || null,
-    plan_id: selected?.dataset.id || null,
-    plan_name: data.get("plan"),
-    seats: Number(data.get("seats")),
+    plan_id: primary.planId || null,
+    plan_name: primary.planName,
+    seats: totalSeats,
     joining_date: data.get("joiningDate"),
     renewal_date: data.get("renewalDate"),
-    standard_monthly_rate: Number(data.get("basePlanPrice")),
-    offered_monthly_rate: Number(data.get("monthlyFee")),
+    standard_monthly_rate: totalStandard,
+    offered_monthly_rate: totalOffered,
     deposit_amount: Number(data.get("deposit") || 0),
     discount_reason: data.get("discountReason") || null,
     notes: data.get("notes") || null
   });
+  await replaceMemberPlanItems(row.id, lines);
   return row;
 }
 
@@ -1770,6 +2044,12 @@ document.addEventListener("click", (event) => {
         alert(`Could not save cash row: ${error.message}`);
         setSyncStatus("Error", "error");
       });
+    return;
+  }
+  if (button.dataset.action === "remove-plan-line") {
+    memberFormPlanLines.splice(Number(button.dataset.index), 1);
+    if (!memberFormPlanLines.length) memberFormPlanLines = [selectedPlanLineFromMainForm()];
+    renderMemberPlanLines();
     return;
   }
   const member = members.find((item) => item.id === button.dataset.id);
@@ -1797,7 +2077,35 @@ els.logoutButton.addEventListener("click", () => {
 });
 
 els.planSelect.addEventListener("change", syncPlanFields);
-els.memberForm.elements.monthlyFee.addEventListener("input", renderRateSummary);
+els.addPlanLine.addEventListener("click", () => {
+  const selected = els.planSelect.options[els.planSelect.selectedIndex];
+  memberFormPlanLines.push({
+    planId: selected?.dataset.id || null,
+    planName: selected?.value || plans[0]?.name || "",
+    category: plans.find((plan) => plan.id === selected?.dataset.id)?.category || inferPlanCategory(selected?.value),
+    seats: Number(selected?.dataset.seats || 1),
+    standardRate: Number(selected?.dataset.price || 0),
+    offeredRate: Number(selected?.dataset.price || 0),
+    sortOrder: memberFormPlanLines.length
+  });
+  renderMemberPlanLines();
+});
+els.memberPlanLines.addEventListener("input", (event) => {
+  const row = event.target.closest("[data-plan-line]");
+  if (!row) return;
+  updateMemberFormPlanLine(Number(row.dataset.planLine), event.target.dataset.field, event.target.value);
+});
+els.memberPlanLines.addEventListener("change", (event) => {
+  const row = event.target.closest("[data-plan-line]");
+  if (!row) return;
+  updateMemberFormPlanLine(Number(row.dataset.planLine), event.target.dataset.field, event.target.value);
+});
+els.memberForm.elements.monthlyFee.addEventListener("input", () => {
+  if (memberFormPlanLines.length === 1) {
+    memberFormPlanLines[0].offeredRate = Number(els.memberForm.elements.monthlyFee.value || 0);
+  }
+  renderRateSummary();
+});
 els.quickService.addEventListener("change", syncQuickInvoiceFields);
 els.quickQuantity.addEventListener("input", syncQuickInvoiceFields);
 els.resetQuickInvoice.addEventListener("click", () => {
