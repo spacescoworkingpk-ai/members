@@ -1248,7 +1248,125 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
   return cursorY + lineHeight;
 }
 
-function receiptPreviewFile() {
+function collectReceiptStyles() {
+  return [...document.styleSheets].map((sheet) => {
+    try {
+      return [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+    } catch {
+      return "";
+    }
+  }).join("\n");
+}
+
+async function inlineReceiptImages(root) {
+  const images = [...root.querySelectorAll("img")];
+  await Promise.all(images.map(async (image) => {
+    try {
+      const source = image.getAttribute("src");
+      if (!source || source.startsWith("data:")) return;
+      const response = await fetch(new URL(source, window.location.href));
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      image.setAttribute("src", dataUrl);
+    } catch (error) {
+      console.warn("Could not inline receipt image", error);
+    }
+  }));
+}
+
+function canvasBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("Could not generate receipt image."));
+      }
+    }, "image/png", 0.96);
+  });
+}
+
+async function receiptDomSnapshotFile() {
+  const element = els.receiptPreview.querySelector(".receipt-box");
+  if (!element) throw new Error("Receipt preview is not ready.");
+
+  const clone = element.cloneNode(true);
+  await inlineReceiptImages(clone);
+
+  const rect = element.getBoundingClientRect();
+  const padding = 32;
+  const width = Math.ceil(rect.width || element.offsetWidth || 760);
+  const height = Math.ceil(element.scrollHeight || rect.height || 980);
+  clone.style.margin = `${padding}px auto`;
+  clone.style.width = `${width}px`;
+  clone.style.maxWidth = "none";
+
+  const serialized = new XMLSerializer().serializeToString(clone);
+  const styles = collectReceiptStyles();
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width + padding * 2}" height="${height + padding * 2}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" class="receipt-share-capture">
+          <style>
+            ${styles}
+            .receipt-share-capture {
+              width: ${width + padding * 2}px;
+              min-height: ${height + padding * 2}px;
+              overflow: hidden;
+              background: #eef2f4;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            .receipt-share-capture .receipt-box {
+              box-sizing: border-box;
+            }
+          </style>
+          ${serialized}
+        </div>
+      </foreignObject>
+    </svg>
+  `;
+
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+      image.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(window.devicePixelRatio || 2, 3);
+    canvas.width = (width + padding * 2) * scale;
+    canvas.height = (height + padding * 2) * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#eef2f4";
+    ctx.fillRect(0, 0, width + padding * 2, height + padding * 2);
+    ctx.drawImage(image, 0, 0);
+    const blob = await canvasBlob(canvas);
+    return new File([blob], currentReceiptShare.fileName, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function receiptPreviewFile() {
+  try {
+    return await receiptDomSnapshotFile();
+  } catch (error) {
+    console.warn("Receipt DOM snapshot failed, using fallback image", error);
+    return receiptCanvasFallbackFile();
+  }
+}
+
+function receiptCanvasFallbackFile() {
   const receipt = currentReceiptShare.receipt;
   if (!receipt) throw new Error("No receipt is open.");
 
@@ -1405,15 +1523,7 @@ function receiptPreviewFile() {
   ctx.fillText(business.website, 812, 1098);
   ctx.textAlign = "left";
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("Could not generate receipt image."));
-        return;
-      }
-      resolve(new File([blob], currentReceiptShare.fileName, { type: "image/png" }));
-    }, "image/png", 0.94);
-  });
+  return canvasBlob(canvas).then((blob) => new File([blob], currentReceiptShare.fileName, { type: "image/png" }));
 }
 
 async function shareReceiptToWhatsapp(event) {

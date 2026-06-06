@@ -948,6 +948,20 @@ label textarea {
   padding: 16px 22px 22px;
 }
 
+.receipt-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  justify-content: end;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
 .receipt-preview {
   max-height: min(82vh, 920px);
   overflow: auto;
@@ -1572,6 +1586,20 @@ label textarea {
   }
 
   #receiptDialog .modal-actions {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+    padding: 12px;
+  }
+
+  #receiptDialog .receipt-preview {
+    max-height: calc(100dvh - 176px);
+  }
+
+  #receiptDialog #whatsappReceipt {
+    order: -1;
+    grid-column: 1 / -1;
+    min-height: 50px;
+    font-size: 15px;
   }
 }
