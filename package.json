@@ -1,9 +1,0 @@
-{
-  "name": "spaces-coworking-members",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "pdfkit": "^0.15.2"
-  }
-}
