@@ -700,6 +700,7 @@ function renderMembers() {
           <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
           <button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>
           ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
+          <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Delete</button>
         </td>
       </tr>
     `;
@@ -757,7 +758,10 @@ function renderSheetEditor() {
           <option value="cancelled" ${member.status === "cancelled" ? "selected" : ""}>Cancelled</option>
         </select>
       </td>
-      <td><button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button></td>
+      <td>
+        <button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button>
+        <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Delete</button>
+      </td>
     </tr>
   `).join("") : `<tr><td colspan="16">No records found.</td></tr>`;
   updateSheetMessage();
@@ -881,6 +885,21 @@ async function saveChangedSheetRowsFor(id) {
     alert(`Could not save member row: ${error.message}`);
     setSyncStatus("Error", "error");
     updateSheetMessage("Save failed");
+  }
+}
+
+async function deleteMember(id) {
+  const member = memberRecords.find((item) => item.id === id);
+  if (!member) return;
+  const confirmed = window.confirm(`Delete ${member.name} from active clients? This will archive the record and keep receipt history.`);
+  if (!confirmed) return;
+  try {
+    setSyncStatus("Deleting", "busy");
+    await patchRow("members", id, { status: "cancelled" });
+    await loadData();
+  } catch (error) {
+    alert(`Could not delete client: ${error.message}`);
+    setSyncStatus("Error", "error");
   }
 }
 
@@ -2049,19 +2068,23 @@ async function generateQuickInvoice() {
     phone: data.get("phone")
   };
   if (paymentMode === "Raza") {
-    await insertRow("cash_ledger", {
-      entry_date: isoToday(),
-      entry_type: "receiving",
-      category: null,
-      source: service.label,
-      person_name: customer.name,
-      amount,
-      notes: [
-        "Payment mode: Raza",
-        customer.phone ? `Contact: ${customer.phone}` : "",
-        note
-      ].filter(Boolean).join(" | ") || null
-    });
+    try {
+      await insertRow("cash_ledger", {
+        entry_date: isoToday(),
+        entry_type: "receiving",
+        category: null,
+        source: service.label,
+        person_name: customer.name,
+        amount,
+        notes: [
+          "Payment mode: Raza",
+          customer.phone ? `Contact: ${customer.phone}` : "",
+          note
+        ].filter(Boolean).join(" | ") || null
+      });
+    } catch (error) {
+      console.warn("Could not add quick receipt to staff cash ledger", error);
+    }
   }
   openInvoice({
     id: `quick-${Date.now()}`,
@@ -2135,6 +2158,10 @@ document.addEventListener("click", (event) => {
     memberFormPlanLines.splice(Number(button.dataset.index), 1);
     if (!memberFormPlanLines.length) memberFormPlanLines = [selectedPlanLineFromMainForm()];
     renderMemberPlanLines();
+    return;
+  }
+  if (button.dataset.action === "delete-member") {
+    deleteMember(button.dataset.id);
     return;
   }
   const member = members.find((item) => item.id === button.dataset.id);

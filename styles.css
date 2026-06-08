@@ -304,6 +304,12 @@ h2 {
   color: #73452d;
 }
 
+.tiny-button.danger {
+  border: 1px solid #f1c1c1;
+  background: #fff3f3;
+  color: #8a2525;
+}
+
 .rate-note {
   margin-top: 4px;
   color: var(--muted);
