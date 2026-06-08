@@ -135,6 +135,11 @@ const els = {
   quickInvoiceSummary: document.querySelector("#quickInvoiceSummary"),
   resetQuickInvoice: document.querySelector("#resetQuickInvoice"),
   cashBalance: document.querySelector("#cashBalance"),
+  cashOpeningBalance: document.querySelector("#cashOpeningBalance"),
+  cashReceivedMonth: document.querySelector("#cashReceivedMonth"),
+  cashExpensesMonth: document.querySelector("#cashExpensesMonth"),
+  cashMonth: document.querySelector("#cashMonth"),
+  cashReport: document.querySelector("#cashReport"),
   expenseForm: document.querySelector("#expenseForm"),
   expenseCategory: document.querySelector("#expenseCategory"),
   receivingForm: document.querySelector("#receivingForm"),
@@ -999,6 +1004,47 @@ function cashAmount(entry) {
   return entry.entry_type === "expense" ? -amount : amount;
 }
 
+function monthKey(date = new Date()) {
+  return isoDate(date).slice(0, 7);
+}
+
+function cashMonthRange(selectedMonth = monthKey()) {
+  const [year, month] = String(selectedMonth || monthKey()).split("-").map(Number);
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+  return {
+    key: `${year}-${String(month).padStart(2, "0")}`,
+    start: isoDate(start),
+    end: isoDate(end)
+  };
+}
+
+function isCashEntryInMonth(entry, range) {
+  return entry.entry_date >= range.start && entry.entry_date < range.end;
+}
+
+function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) {
+  const range = cashMonthRange(selectedMonth);
+  const opening = cashEntries
+    .filter((entry) => entry.entry_date < range.start)
+    .reduce((sum, entry) => sum + cashAmount(entry), 0);
+  const monthEntries = cashEntries.filter((entry) => isCashEntryInMonth(entry, range));
+  const received = monthEntries
+    .filter((entry) => entry.entry_type === "receiving")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expenses = monthEntries
+    .filter((entry) => entry.entry_type === "expense")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  return {
+    ...range,
+    opening,
+    received,
+    expenses,
+    closing: opening + received - expenses,
+    entries: monthEntries
+  };
+}
+
 function canEditCashEntry(entry) {
   if (canSeeRevenue()) return true;
   if (entry.created_by && entry.created_by !== session?.user?.id) return false;
@@ -1018,15 +1064,21 @@ function cashEntryOptions(type, selected) {
 function renderCashAccounting() {
   if (!cashLedgerReady) {
     els.cashBalance.textContent = "Setup needed";
+    els.cashOpeningBalance.textContent = "Setup needed";
+    els.cashReceivedMonth.textContent = "Setup needed";
+    els.cashExpensesMonth.textContent = "Setup needed";
     els.cashMessage.textContent = "Run the cash ledger SQL in Supabase to enable this section.";
     els.cashSheet.innerHTML = `<tr><td colspan="7">Cash ledger table is not enabled yet.</td></tr>`;
     return;
   }
   const query = els.cashSearch.value.trim().toLowerCase();
-  const balance = cashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
-  els.cashBalance.textContent = fmt.format(balance);
+  const summary = cashMonthlySummary();
+  els.cashOpeningBalance.textContent = fmt.format(summary.opening);
+  els.cashReceivedMonth.textContent = fmt.format(summary.received);
+  els.cashExpensesMonth.textContent = fmt.format(summary.expenses);
+  els.cashBalance.textContent = fmt.format(summary.closing);
 
-  const filtered = cashEntries.filter((entry) => {
+  const filtered = summary.entries.filter((entry) => {
     const haystack = [
       entry.entry_type,
       entry.category,
@@ -1060,8 +1112,8 @@ function renderCashAccounting() {
   }).join("") : `<tr><td colspan="7">No cash entries found. Run the cash ledger SQL if this section has not been enabled yet.</td></tr>`;
 
   els.cashMessage.textContent = filtered.length
-    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} | Staff can edit own rows for 3 days`
-    : "No cash entries";
+    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} for ${summary.key} | Staff can edit own rows for 3 days`
+    : `No cash entries for ${summary.key}`;
 }
 
 function renderPlans() {
@@ -1872,6 +1924,46 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportCashMonthlyReport() {
+  const summary = cashMonthlySummary();
+  const rows = [
+    ["Spaces Coworking Cash Report"],
+    ["Month", summary.key],
+    ["Opening balance", summary.opening],
+    ["Amount received", summary.received],
+    ["Expenses", summary.expenses],
+    ["Closing cash in hand", summary.closing],
+    [],
+    ["Date", "Type", "Category / Source", "Person", "Amount", "Signed Amount", "Notes"]
+  ];
+  summary.entries
+    .slice()
+    .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || String(a.created_at || "").localeCompare(String(b.created_at || "")))
+    .forEach((entry) => {
+      rows.push([
+        entry.entry_date,
+        entry.entry_type === "expense" ? "Expense" : "Receiving",
+        entry.entry_type === "expense" ? entry.category : entry.source,
+        entry.person_name,
+        Number(entry.amount || 0),
+        cashAmount(entry),
+        entry.notes
+      ]);
+    });
+  downloadCsv(`spaces-cash-report-${summary.key}.csv`, rows);
+}
+
 function setDefaultDates() {
   const today = new Date();
   const renewal = addMonthsClamped(today, 1);
@@ -1879,6 +1971,7 @@ function setDefaultDates() {
   els.memberForm.elements.renewalDate.value = isoDate(renewal);
   els.expenseForm.elements.entryDate.value = isoToday();
   els.receivingForm.elements.entryDate.value = isoToday();
+  if (els.cashMonth && !els.cashMonth.value) els.cashMonth.value = monthKey(today);
 }
 
 function syncPlanFields() {
@@ -2106,6 +2199,8 @@ els.resetQuickInvoice.addEventListener("click", () => {
 els.memberSearch.addEventListener("input", renderMembers);
 els.sheetSearch.addEventListener("input", renderSheetEditor);
 els.cashSearch.addEventListener("input", renderCashAccounting);
+els.cashMonth.addEventListener("change", renderCashAccounting);
+els.cashReport.addEventListener("click", exportCashMonthlyReport);
 els.memberSheet.addEventListener("input", (event) => {
   const row = event.target.closest("tr[data-member-id]");
   if (row) markSheetRowDirty(row);

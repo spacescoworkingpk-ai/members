@@ -157,8 +157,26 @@
               <p class="eyebrow">Staff cash accounting</p>
               <h2>Expenses, receiving, and cash in hand</h2>
             </div>
+            <div class="cash-controls">
+              <label>Report month<input id="cashMonth" type="month"></label>
+              <button class="ghost-button" id="cashReport" type="button">Generate monthly report</button>
+            </div>
+          </div>
+          <div class="cash-summary-grid">
             <div class="cash-balance">
-              <span>Current cash in hand</span>
+              <span>Opening balance</span>
+              <strong id="cashOpeningBalance">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Amount received</span>
+              <strong id="cashReceivedMonth">PKR 0</strong>
+            </div>
+            <div class="cash-balance expense-balance">
+              <span>Expenses this month</span>
+              <strong id="cashExpensesMonth">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Closing cash in hand</span>
               <strong id="cashBalance">PKR 0</strong>
             </div>
           </div>

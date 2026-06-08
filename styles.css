@@ -471,6 +471,24 @@ h2 {
   margin-bottom: 18px;
 }
 
+.cash-controls {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cash-controls label {
+  min-width: 170px;
+}
+
+.cash-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
 .cash-entry-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -486,6 +504,19 @@ h2 {
   border-radius: 8px;
   background: #eaf7ee;
   text-align: right;
+}
+
+.expense-balance {
+  border-color: #f1c1c1;
+  background: #fff3f3;
+}
+
+.expense-balance span {
+  color: #8a2525;
+}
+
+.expense-balance strong {
+  color: #7a1818;
 }
 
 .cash-balance span {
@@ -1314,9 +1345,19 @@ label textarea {
   .summary-grid,
   .workspace-band,
   .content-grid,
+  .cash-summary-grid,
   .cash-entry-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cash-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cash-controls label {
+    min-width: 0;
   }
 
   .plan-line-row {
