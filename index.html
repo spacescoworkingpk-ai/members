@@ -131,6 +131,14 @@
                 </select>
               </label>
               <label><span id="quickQuantityLabel">No. of people</span><input required name="quantity" id="quickQuantity" type="number" min="1" value="1"></label>
+              <label>Payment mode
+                <select required name="paymentMode">
+                  <option value="Raza">Raza</option>
+                  <option value="Bank transfer">Bank transfer</option>
+                  <option value="Owner / Abrar">Owner / Abrar</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
               <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
               <label>Total<input readonly name="total" id="quickTotal" type="number"></label>
               <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>

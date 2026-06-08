@@ -893,31 +893,20 @@ async function createCashEntryFromForm(form, entryType) {
   });
 }
 
-async function createPaymentCashEntry(member, amount, reference) {
-  try {
-    await insertRow("cash_ledger", {
-      entry_date: isoToday(),
-      entry_type: "receiving",
-      category: null,
-      source: member.plan || "Membership payment",
-      person_name: member.name,
-      amount,
-      notes: `Membership payment${reference ? ` - ${reference}` : ""}`
-    });
-  } catch (error) {
-    console.warn("Could not add payment to cash ledger", error);
-  }
-}
-
 async function replaceMemberPlanItems(memberId, items) {
   if (!memberPlanItemsReady) return;
-  await deleteRows("member_plan_items", `member_id=eq.${encodeURIComponent(memberId)}`);
-  if (!items.length) return;
-  await supabaseRequest("/rest/v1/member_plan_items", {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: items.map((item, index) => serializePlanLineForDb(item, memberId, index))
-  });
+  try {
+    await deleteRows("member_plan_items", `member_id=eq.${encodeURIComponent(memberId)}`);
+    if (!items.length) return;
+    await supabaseRequest("/rest/v1/member_plan_items", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: items.map((item, index) => serializePlanLineForDb(item, memberId, index))
+    });
+  } catch (error) {
+    memberPlanItemsReady = false;
+    console.warn("Could not save member plan bundle lines", error);
+  }
 }
 
 async function saveCashRow(id) {
@@ -1285,7 +1274,6 @@ async function markPaid(id) {
       payment_method: "cash",
       reference: invoice.invoice_number
     });
-    await createPaymentCashEntry(member, Number(member.monthlyFee), invoice.invoice_number);
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
     openInvoice(updatedMember, { mode: "receipt", invoiceId: invoice.invoice_number });
@@ -1962,22 +1950,26 @@ async function generateQuickInvoice() {
   const amount = service.rate * quantity;
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
+  const paymentMode = data.get("paymentMode");
   const customer = {
     name: data.get("name"),
     phone: data.get("phone")
   };
-  await insertRow("cash_ledger", {
-    entry_date: isoToday(),
-    entry_type: "receiving",
-    category: null,
-    source: service.label,
-    person_name: customer.name,
-    amount,
-    notes: [
-      customer.phone ? `Contact: ${customer.phone}` : "",
-      note
-    ].filter(Boolean).join(" | ") || null
-  });
+  if (paymentMode === "Raza") {
+    await insertRow("cash_ledger", {
+      entry_date: isoToday(),
+      entry_type: "receiving",
+      category: null,
+      source: service.label,
+      person_name: customer.name,
+      amount,
+      notes: [
+        "Payment mode: Raza",
+        customer.phone ? `Contact: ${customer.phone}` : "",
+        note
+      ].filter(Boolean).join(" | ") || null
+    });
+  }
   openInvoice({
     id: `quick-${Date.now()}`,
     name: customer.name,
@@ -1999,7 +1991,7 @@ async function generateQuickInvoice() {
     unitPrice: service.rate,
     amount,
     ...validity,
-    note
+    note: [`Payment mode: ${paymentMode}`, note].filter(Boolean).join(" | ")
   });
 }
 
