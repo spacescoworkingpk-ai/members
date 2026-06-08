@@ -30,6 +30,7 @@ from (
   values
     ('2026-06-01'::date, 'receiving', null, 'Owner transfer - Abrar', 'Abrar', 20000, 'Amount received - Abrar'),
     ('2026-06-02'::date, 'receiving', null, 'Day Pass', null, 2000, 'Daily pass'),
+    ('2026-06-08'::date, 'receiving', null, 'Balance', 'Abrar', 500, 'Balance adjustment to bring staff cash in hand to Rs5,200'),
     ('2026-06-01'::date, 'expense', 'Generator petrol', null, null, 3500, 'petrol'),
     ('2026-06-01'::date, 'expense', 'Cleaning', null, null, 1500, 'washing stuffs'),
     ('2026-06-02'::date, 'expense', 'Office Supplies', null, null, 9500, 'tea and coffee'),
