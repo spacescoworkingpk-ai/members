@@ -122,6 +122,7 @@ const els = {
   authPassword: document.querySelector("#authPassword"),
   authMessage: document.querySelector("#authMessage"),
   appShell: document.querySelector("#appShell"),
+  toastStack: document.querySelector("#toastStack"),
   logoutButton: document.querySelector("#logoutButton"),
   pageTitle: document.querySelector("#pageTitle"),
   syncStatus: document.querySelector("#syncStatus"),
@@ -511,6 +512,62 @@ function mapMember(row) {
 function setSyncStatus(text, state = "") {
   els.syncStatus.textContent = text;
   els.syncStatus.dataset.state = state;
+}
+
+function showToast(title, detail = "", type = "success") {
+  if (!els.toastStack) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type === "error" ? "error" : ""}`;
+  toast.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    ${detail ? `<span>${escapeHtml(detail)}</span>` : ""}
+  `;
+  els.toastStack.appendChild(toast);
+  window.setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(8px)";
+    toast.style.transition = "opacity 160ms ease, transform 160ms ease";
+    window.setTimeout(() => toast.remove(), 180);
+  }, type === "error" ? 5200 : 3400);
+}
+
+function lockControl(control, busyText = "Saving...") {
+  if (!control || control.dataset.busy === "true") return null;
+  control.dataset.busy = "true";
+  control.disabled = true;
+  if ("textContent" in control) {
+    control.dataset.originalText = control.textContent;
+    control.textContent = busyText;
+  }
+  return (delay = 1800) => {
+    window.setTimeout(() => {
+      control.disabled = false;
+      control.dataset.busy = "false";
+      if (control.dataset.originalText) {
+        control.textContent = control.dataset.originalText;
+        delete control.dataset.originalText;
+      }
+    }, delay);
+  };
+}
+
+async function withControlLock(control, task, options = {}) {
+  if (control?.dataset.busy === "true") return null;
+  const unlock = lockControl(control, options.busyText || "Saving...");
+  try {
+    const result = await task();
+    if (options.successTitle && result !== false) showToast(options.successTitle, options.successDetail || "");
+    if (unlock) unlock(options.cooldownMs ?? 1800);
+    return result;
+  } catch (error) {
+    if (unlock) unlock(0);
+    showToast(options.errorTitle || "Action failed", error.message || "Please try again.", "error");
+    throw error;
+  }
+}
+
+function submitButtonFor(form, event, fallbackSelector = 'button[type="submit"]') {
+  return event?.submitter || form?.querySelector(fallbackSelector);
 }
 
 function formatDate(dateString) {
@@ -990,7 +1047,8 @@ async function saveChangedSheetRows() {
   const changedRows = [...els.memberSheet.querySelectorAll("tr.dirty")];
   if (!changedRows.length) {
     updateSheetMessage("No changes to save");
-    return;
+    showToast("No changes to save", "The client sheet is already up to date.");
+    return false;
   }
   try {
     setSyncStatus("Saving", "busy");
@@ -1004,6 +1062,7 @@ async function saveChangedSheetRows() {
     alert(`Could not save sheet changes: ${error.message}`);
     setSyncStatus("Error", "error");
     updateSheetMessage("Save failed");
+    throw error;
   }
 }
 
@@ -1018,6 +1077,7 @@ async function saveChangedSheetRowsFor(id) {
     alert(`Could not save member row: ${error.message}`);
     setSyncStatus("Error", "error");
     updateSheetMessage("Save failed");
+    throw error;
   }
 }
 
@@ -1030,6 +1090,7 @@ async function deleteMember(id) {
     setSyncStatus("Deleting", "busy");
     await patchRow("members", id, { status: "cancelled" });
     await loadData();
+    showToast("Client archived", `${member.name} was removed from active clients.`);
   } catch (error) {
     alert(`Could not delete client: ${error.message}`);
     setSyncStatus("Error", "error");
@@ -1899,12 +1960,12 @@ async function recordCollectedAmount({ amount, paymentSource, entryDate, source,
   }
 }
 
-async function markPaid(id) {
+async function markPaid(id, control = null) {
   const member = members.find((item) => item.id === id);
   if (!member) return;
   const paymentSource = promptPaymentSource(`Payment source for ${member.name}`);
   if (!paymentSource) return;
-  try {
+  return withControlLock(control, async () => {
     setSyncStatus("Saving", "busy");
     const invoice = await createInvoice(member, {
       mode: "receipt",
@@ -1933,10 +1994,16 @@ async function markPaid(id) {
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
     openInvoice(updatedMember, { mode: "receipt", invoiceId: invoice.invoice_number });
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Receipt marked paid",
+    successDetail: `${member.name} receipt was saved.`,
+    errorTitle: "Could not mark paid",
+    cooldownMs: 2400
+  }).catch((error) => {
     alert(`Could not mark paid: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 }
 
 async function createInvoice(member, override = {}) {
@@ -2777,25 +2844,45 @@ document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   if (button.dataset.action === "save-member-row") {
-    saveChangedSheetRowsFor(button.dataset.id);
+    withControlLock(button, () => saveChangedSheetRowsFor(button.dataset.id), {
+      busyText: "Saving...",
+      successTitle: "Member row saved",
+      successDetail: "Client sheet changes were saved.",
+      errorTitle: "Could not save member row",
+      cooldownMs: 1800
+    });
     return;
   }
   if (button.dataset.action === "save-cash-row") {
-    saveCashRow(button.dataset.id)
-      .then(loadData)
-      .catch((error) => {
-        alert(`Could not save cash row: ${error.message}`);
-        setSyncStatus("Error", "error");
-      });
+    withControlLock(button, async () => {
+      await saveCashRow(button.dataset.id);
+      await loadData();
+    }, {
+      busyText: "Saving...",
+      successTitle: "Cash row saved",
+      successDetail: "Staff cash sheet was updated.",
+      errorTitle: "Could not save cash row",
+      cooldownMs: 1800
+    }).catch((error) => {
+      alert(`Could not save cash row: ${error.message}`);
+      setSyncStatus("Error", "error");
+    });
     return;
   }
   if (button.dataset.action === "save-owner-row") {
-    saveOwnerRow(button.dataset.id)
-      .then(loadData)
-      .catch((error) => {
-        alert(`Could not save owner ledger row: ${error.message}`);
-        setSyncStatus("Error", "error");
-      });
+    withControlLock(button, async () => {
+      await saveOwnerRow(button.dataset.id);
+      await loadData();
+    }, {
+      busyText: "Saving...",
+      successTitle: "Owner row saved",
+      successDetail: "Owner ledger was updated.",
+      errorTitle: "Could not save owner ledger row",
+      cooldownMs: 1800
+    }).catch((error) => {
+      alert(`Could not save owner ledger row: ${error.message}`);
+      setSyncStatus("Error", "error");
+    });
     return;
   }
   if (button.dataset.action === "remove-plan-line") {
@@ -2805,12 +2892,16 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (button.dataset.action === "delete-member") {
-    deleteMember(button.dataset.id);
+    withControlLock(button, () => deleteMember(button.dataset.id), {
+      busyText: "Deleting...",
+      errorTitle: "Could not delete client",
+      cooldownMs: 1600
+    });
     return;
   }
   const member = members.find((item) => item.id === button.dataset.id);
   if (!member) return;
-  if (button.dataset.action === "paid") markPaid(member.id);
+  if (button.dataset.action === "paid") markPaid(member.id, button);
   if (button.dataset.action === "receipt") openReceipt(member);
   if (button.dataset.action === "edit-invoice") openEditedInvoiceForm(member);
 });
@@ -2906,7 +2997,15 @@ els.ownerSheet.addEventListener("change", (event) => {
   if (!categorySelect) return;
   categorySelect.innerHTML = ownerEntryOptions(event.target.value, "");
 });
-els.saveAllSheetRows.addEventListener("click", saveChangedSheetRows);
+els.saveAllSheetRows.addEventListener("click", () => {
+  withControlLock(els.saveAllSheetRows, saveChangedSheetRows, {
+    busyText: "Saving...",
+    successTitle: "Client sheet saved",
+    successDetail: "All changed rows were updated.",
+    errorTitle: "Could not save sheet",
+    cooldownMs: 2200
+  });
+});
 els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
   alert(`Could not refresh members: ${error.message}`);
   setSyncStatus("Error", "error");
@@ -2931,92 +3030,135 @@ els.resetMemberForm.addEventListener("click", () => {
 
 els.memberForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.memberForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createMemberFromForm();
     els.memberForm.reset();
     await loadData();
     setDefaultDates();
     syncPlanFields();
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Member added",
+    successDetail: "The new member record was saved.",
+    errorTitle: "Could not save member",
+    cooldownMs: 2500
+  }).catch((error) => {
     alert(`Could not save member: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.quickInvoiceForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.quickInvoiceForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await generateQuickInvoice();
     els.quickInvoiceForm.reset();
     syncQuickInvoiceFields();
     await loadData();
-  } catch (error) {
+  }, {
+    busyText: "Generating...",
+    successTitle: "Receipt generated",
+    successDetail: "Temporary receipt is ready to share.",
+    errorTitle: "Could not generate receipt",
+    cooldownMs: 2500
+  }).catch((error) => {
     alert(`Could not generate quick receipt: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.expenseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.expenseForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createCashEntryFromForm(els.expenseForm, "expense");
     els.expenseForm.reset();
     setDefaultDates();
     await loadData();
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Expense saved",
+    successDetail: "Staff cash ledger was updated.",
+    errorTitle: "Could not save expense",
+    cooldownMs: 2200
+  }).catch((error) => {
     alert(`Could not save expense: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.receivingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.receivingForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createCashEntryFromForm(els.receivingForm, "receiving");
     els.receivingForm.reset();
     setDefaultDates();
     await loadData();
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Receiving saved",
+    successDetail: "Staff balance was updated.",
+    errorTitle: "Could not save receiving",
+    cooldownMs: 2200
+  }).catch((error) => {
     alert(`Could not save receiving: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.ownerExpenseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.ownerExpenseForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createOwnerEntryFromForm(els.ownerExpenseForm, "expense");
     els.ownerExpenseForm.reset();
     setDefaultDates();
     await loadData();
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Owner expense saved",
+    successDetail: "Owner ledger was updated.",
+    errorTitle: "Could not save owner expense",
+    cooldownMs: 2200
+  }).catch((error) => {
     alert(`Could not save owner expense: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.ownerReceivingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  try {
+  const submitButton = submitButtonFor(els.ownerReceivingForm, event);
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createOwnerEntryFromForm(els.ownerReceivingForm, "receiving");
     els.ownerReceivingForm.reset();
     setDefaultDates();
     await loadData();
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Owner receiving saved",
+    successDetail: "Owner ledger was updated.",
+    errorTitle: "Could not save owner receiving",
+    cooldownMs: 2200
+  }).catch((error) => {
     alert(`Could not save owner receiving: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 els.editInvoiceForm.addEventListener("submit", async (event) => {
   if (event.submitter?.value === "cancel") return;
   event.preventDefault();
+  const submitButton = submitButtonFor(els.editInvoiceForm, event);
   const data = new FormData(els.editInvoiceForm);
   const member = members.find((item) => item.id === data.get("memberId"));
   if (!member) return;
@@ -3030,16 +3172,22 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
     validTill: data.get("validTill"),
     note: data.get("editNote")
   };
-  try {
+  withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     await createInvoice(member, override);
     await loadData();
     els.editInvoiceDialog.close();
     openInvoice(member, override);
-  } catch (error) {
+  }, {
+    busyText: "Saving...",
+    successTitle: "Edited invoice ready",
+    successDetail: `${member.name} invoice was created.`,
+    errorTitle: "Could not create edited invoice",
+    cooldownMs: 2200
+  }).catch((error) => {
     alert(`Could not create edited invoice: ${error.message}`);
     setSyncStatus("Error", "error");
-  }
+  });
 });
 
 if (session?.access_token) {
