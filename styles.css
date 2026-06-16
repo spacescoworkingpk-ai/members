@@ -170,6 +170,8 @@ nav a.active {
 
 main {
   min-width: 0;
+  width: min(100%, 1480px);
+  margin: 0 auto;
   padding: 30px;
 }
 
@@ -179,6 +181,12 @@ main {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 14px 36px rgba(31, 37, 35, 0.07);
+  backdrop-filter: blur(10px);
 }
 
 h1,
@@ -319,9 +327,13 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 22px;
+}
+
+.page-section {
+  margin-bottom: 22px;
 }
 
 .metric,
@@ -368,7 +380,7 @@ h2 {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
 
 .visual-panel {
@@ -458,6 +470,10 @@ h2 {
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
   gap: 14px;
   margin-bottom: 18px;
+}
+
+#members.content-grid {
+  grid-template-columns: 1fr;
 }
 
 .member-form-panel {
@@ -1581,6 +1597,30 @@ label textarea {
   }
 
   .cash-table td:nth-child(7)::before {
+    content: "Save";
+  }
+
+  .owner-table td:nth-child(3)::before {
+    content: "Category";
+  }
+
+  .owner-table td:nth-child(4)::before {
+    content: "Source";
+  }
+
+  .owner-table td:nth-child(5)::before {
+    content: "Amount";
+  }
+
+  .owner-table td:nth-child(6)::before {
+    content: "Notes";
+  }
+
+  .owner-table td:nth-child(7)::before {
+    content: "Attachment";
+  }
+
+  .owner-table td:nth-child(8)::before {
     content: "Save";
   }
 

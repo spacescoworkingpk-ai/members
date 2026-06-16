@@ -30,11 +30,8 @@
         </div>
         <nav>
           <a href="#dashboard" class="active">Dashboard</a>
-          <a href="#member-form">Member Form</a>
           <a href="#members">Members</a>
-          <a href="#member-sheet">Sheet Editor</a>
           <a href="#receipts">Receipts</a>
-          <a href="#quick-invoice">Quick Invoice</a>
           <a href="#cash-accounting">Staff Cash</a>
           <a class="owner-only" href="#owner-ledger">Owner Ledger</a>
           <a href="#accounting">Accounting</a>
@@ -50,19 +47,19 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">Operations console</p>
-            <h1>Spaces Coworking</h1>
+            <h1 id="pageTitle">Dashboard</h1>
           </div>
           <div class="topbar-actions">
             <span class="sync-status" id="syncStatus">Connecting</span>
             <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
             <button class="ghost-button" id="logoutButton" type="button">Logout</button>
-            <a class="ghost-button" href="#quick-invoice">Quick invoice</a>
+            <a class="ghost-button" href="#receipts">Quick invoice</a>
             <a class="ghost-button" href="#cash-accounting">Staff cash</a>
-            <a class="primary-button" href="#member-form">Add member</a>
+            <a class="primary-button" href="#members">Add member</a>
           </div>
         </header>
 
-        <section class="summary-grid" id="dashboard" aria-label="Business summary">
+        <section class="summary-grid page-section" id="dashboard" data-page="dashboard" aria-label="Business summary">
           <article class="metric">
             <span>Monthly revenue</span>
             <strong id="metricRevenue">PKR 0</strong>
@@ -95,7 +92,7 @@
           </article>
         </section>
 
-        <section class="workspace-band">
+        <section class="workspace-band page-section" data-page="dashboard">
           <div class="visual-panel photo-panel">
             <img src="assets/spaces-interior.jpg" alt="Spaces Coworking shared workspace interior">
             <div class="photo-caption">
@@ -112,7 +109,7 @@
           </div>
         </section>
 
-        <section class="panel member-form-panel quick-invoice-panel" id="quick-invoice">
+        <section class="panel member-form-panel quick-invoice-panel page-section" id="quick-invoice" data-page="receipts">
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Temporary billing</p>
@@ -152,7 +149,7 @@
           </form>
         </section>
 
-        <section class="panel cash-panel" id="cash-accounting">
+        <section class="panel cash-panel page-section" id="cash-accounting" data-page="cash-accounting">
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Staff cash accounting</p>
@@ -242,7 +239,7 @@
           </div>
         </section>
 
-        <section class="panel cash-panel owner-only" id="owner-ledger">
+        <section class="panel cash-panel owner-only page-section" id="owner-ledger" data-page="owner-ledger">
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Owner only</p>
@@ -332,7 +329,7 @@
             <span class="sheet-message" id="ownerMessage">Synced owner ledger</span>
           </div>
           <div class="sheet-wrap">
-            <table class="cash-table sheet-table">
+            <table class="cash-table owner-table sheet-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -350,7 +347,7 @@
           </div>
         </section>
 
-        <section class="panel member-form-panel" id="member-form">
+        <section class="panel member-form-panel page-section" id="member-form" data-page="members">
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Staff member form</p>
@@ -392,14 +389,14 @@
           </form>
         </section>
 
-        <section class="panel sheet-panel" id="member-sheet">
+        <section class="panel sheet-panel page-section" id="member-sheet" data-page="members">
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Client sheet</p>
               <h2>Edit current client records</h2>
             </div>
             <div class="sheet-actions">
-              <a class="ghost-button" href="#member-form">Add current client</a>
+              <a class="ghost-button" href="#members">Add current client</a>
               <button class="ghost-button" id="refreshMembers" type="button">Refresh</button>
               <button class="primary-button" id="saveAllSheetRows" type="button">Save changes</button>
             </div>
@@ -438,7 +435,7 @@
           </div>
         </section>
 
-        <section class="content-grid" id="members">
+        <section class="content-grid page-section" id="members" data-page="members">
           <div class="panel wide">
             <div class="section-heading row">
               <div>
@@ -469,30 +466,30 @@
             </div>
           </div>
 
-          <div class="panel" id="receipts">
-            <div class="section-heading">
-              <p class="eyebrow">Receipt generator</p>
-              <h2>Payment queue</h2>
-            </div>
-            <div id="receiptQueue" class="receipt-list"></div>
-          </div>
         </section>
 
-        <section class="content-grid" id="accounting">
-          <div class="panel">
-            <div class="section-heading">
-              <p class="eyebrow">Accounting</p>
-              <h2>Monthly ledger</h2>
-            </div>
-            <div class="ledger" id="ledger"></div>
+        <section class="panel page-section" id="receipts" data-page="receipts">
+          <div class="section-heading">
+            <p class="eyebrow">Receipt generator</p>
+            <h2>Payment queue</h2>
           </div>
-          <div class="panel" id="plans">
-            <div class="section-heading">
-              <p class="eyebrow">Membership options</p>
-              <h2>Plan catalog</h2>
-            </div>
-            <div class="plan-list" id="planList"></div>
+          <div id="receiptQueue" class="receipt-list"></div>
+        </section>
+
+        <section class="panel page-section" id="accounting" data-page="accounting">
+          <div class="section-heading">
+            <p class="eyebrow">Accounting</p>
+            <h2>Monthly ledger</h2>
           </div>
+          <div class="ledger" id="ledger"></div>
+        </section>
+
+        <section class="panel page-section" id="plans" data-page="plans">
+          <div class="section-heading">
+            <p class="eyebrow">Membership options</p>
+            <h2>Plan catalog</h2>
+          </div>
+          <div class="plan-list" id="planList"></div>
         </section>
       </main>
     </div>

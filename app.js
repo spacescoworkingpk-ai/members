@@ -123,6 +123,7 @@ const els = {
   authMessage: document.querySelector("#authMessage"),
   appShell: document.querySelector("#appShell"),
   logoutButton: document.querySelector("#logoutButton"),
+  pageTitle: document.querySelector("#pageTitle"),
   syncStatus: document.querySelector("#syncStatus"),
   metricRevenue: document.querySelector("#metricRevenue"),
   metricCollected: document.querySelector("#metricCollected"),
@@ -674,6 +675,45 @@ function setOwnerOnlyVisibility() {
   document.querySelectorAll(".owner-only").forEach((element) => {
     element.hidden = !canSeeRevenue();
   });
+  if (!canSeeRevenue() && activePage() === "owner-ledger") {
+    history.replaceState(null, "", "#dashboard");
+  }
+}
+
+const pageTitles = {
+  dashboard: "Dashboard",
+  members: "Members",
+  receipts: "Receipts",
+  "cash-accounting": "Staff Cash",
+  "owner-ledger": "Owner Ledger",
+  accounting: "Accounting",
+  plans: "Plans"
+};
+
+const pageAliases = {
+  "member-form": "members",
+  "member-sheet": "members",
+  "quick-invoice": "receipts"
+};
+
+function activePage() {
+  const hash = window.location.hash.replace("#", "") || "dashboard";
+  const page = pageAliases[hash] || hash;
+  return pageTitles[page] ? page : "dashboard";
+}
+
+function showActivePage() {
+  const page = activePage();
+  document.querySelectorAll(".page-section").forEach((section) => {
+    section.hidden = section.dataset.page !== page;
+  });
+  document.querySelectorAll(".sidebar nav a").forEach((link) => {
+    const linkPage = pageAliases[link.hash.replace("#", "")] || link.hash.replace("#", "");
+    link.classList.toggle("active", linkPage === page);
+  });
+  if (els.pageTitle) {
+    els.pageTitle.textContent = pageTitles[page] || "Dashboard";
+  }
 }
 
 function promptPaymentSource(title = "Select payment source") {
@@ -714,6 +754,7 @@ function categorySummaries() {
 
 function render() {
   setOwnerOnlyVisibility();
+  showActivePage();
   renderMetrics();
   renderMembers();
   renderSheetEditor();
@@ -2871,6 +2912,7 @@ els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
   setSyncStatus("Error", "error");
 }));
 window.addEventListener("focus", () => maybeRefreshData());
+window.addEventListener("hashchange", showActivePage);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) maybeRefreshData();
 });
