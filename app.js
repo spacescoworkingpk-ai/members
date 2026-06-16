@@ -45,6 +45,13 @@ const quickServices = {
   }
 };
 
+const paymentSources = [
+  { key: "spaces_account", label: "Spaces Account" },
+  { key: "raza_manager", label: "Raza / Manager" },
+  { key: "staff", label: "Staff" },
+  { key: "abrar_owner", label: "Abrar / Owner" }
+];
+
 const expenseCategories = [
   "Food supplies",
   "Office Supplies",
@@ -64,6 +71,21 @@ const expenseCategories = [
   "Security deposit return"
 ];
 
+const ownerExpenseCategories = [
+  "Transfer to Staff",
+  "Salaries",
+  "Cleaning Expenses",
+  "Internet Bills",
+  "Utility Bills",
+  "Building Maintenance",
+  "Office Maintenance",
+  "Office Supplies",
+  "Food Supplies",
+  "Generator Maintenance",
+  "Miscellaneous Expenses",
+  "Custom Categories"
+];
+
 let plans = [];
 let members = [];
 let memberRecords = [];
@@ -71,7 +93,9 @@ let memberPlanItems = [];
 let invoices = [];
 let payments = [];
 let cashEntries = [];
+let ownerEntries = [];
 let cashLedgerReady = true;
+let ownerLedgerReady = true;
 let memberPlanItemsReady = true;
 let staffProfile = null;
 let session = loadSession();
@@ -147,6 +171,26 @@ const els = {
   cashSearch: document.querySelector("#cashSearch"),
   cashMessage: document.querySelector("#cashMessage"),
   cashSheet: document.querySelector("#cashSheet"),
+  ownerMonth: document.querySelector("#ownerMonth"),
+  ownerReport: document.querySelector("#ownerReport"),
+  financeRevenue: document.querySelector("#financeRevenue"),
+  financeOwnerExpenses: document.querySelector("#financeOwnerExpenses"),
+  financeStaffExpenses: document.querySelector("#financeStaffExpenses"),
+  financeNetProfit: document.querySelector("#financeNetProfit"),
+  financeOwnerBalance: document.querySelector("#financeOwnerBalance"),
+  financeStaffBalance: document.querySelector("#financeStaffBalance"),
+  financeOutstanding: document.querySelector("#financeOutstanding"),
+  financeCompanyExpenses: document.querySelector("#financeCompanyExpenses"),
+  financeSourceBreakdown: document.querySelector("#financeSourceBreakdown"),
+  ownerExpenseForm: document.querySelector("#ownerExpenseForm"),
+  ownerExpenseCategory: document.querySelector("#ownerExpenseCategory"),
+  ownerExpenseSource: document.querySelector("#ownerExpenseSource"),
+  ownerReceivingForm: document.querySelector("#ownerReceivingForm"),
+  ownerReceivingSource: document.querySelector("#ownerReceivingSource"),
+  ownerReceivingPaymentSource: document.querySelector("#ownerReceivingPaymentSource"),
+  ownerSearch: document.querySelector("#ownerSearch"),
+  ownerMessage: document.querySelector("#ownerMessage"),
+  ownerSheet: document.querySelector("#ownerSheet"),
   editInvoiceDialog: document.querySelector("#editInvoiceDialog"),
   editInvoiceForm: document.querySelector("#editInvoiceForm"),
   receiptDialog: document.querySelector("#receiptDialog"),
@@ -285,6 +329,19 @@ async function loadData() {
     cashEntries = [];
     cashLedgerReady = false;
     console.warn("cash_ledger unavailable", error);
+  }
+  if (canSeeRevenue()) {
+    try {
+      ownerEntries = await selectRows("owner_ledger", "select=*&order=entry_date.desc,created_at.desc");
+      ownerLedgerReady = true;
+    } catch (error) {
+      ownerEntries = [];
+      ownerLedgerReady = false;
+      console.warn("owner_ledger unavailable", error);
+    }
+  } else {
+    ownerEntries = [];
+    ownerLedgerReady = false;
   }
   plans = planRows.map(mapPlan);
   invoices = invoiceRows;
@@ -598,6 +655,34 @@ function moneyOrRestricted(amount) {
   return canSeeRevenue() ? fmt.format(amount) : "Restricted";
 }
 
+function paymentSourceLabel(source) {
+  return paymentSources.find((item) => item.key === source || item.label === source)?.label || source || "Not selected";
+}
+
+function paymentSourceOptions(selected) {
+  return paymentSources.map((source) => `
+    <option value="${source.key}" ${source.key === selected || source.label === selected ? "selected" : ""}>${source.label}</option>
+  `).join("");
+}
+
+function setOwnerOnlyVisibility() {
+  document.querySelectorAll(".owner-only").forEach((element) => {
+    element.hidden = !canSeeRevenue();
+  });
+}
+
+function promptPaymentSource(title = "Select payment source") {
+  const lines = paymentSources.map((source, index) => `${index + 1}. ${source.label}`).join("\n");
+  const answer = window.prompt(`${title}\n\n${lines}\n\nEnter 1, 2, 3, or 4:`);
+  if (answer === null) return null;
+  const selected = paymentSources[Number(answer.trim()) - 1];
+  if (!selected) {
+    alert("Payment source is required before saving this payment.");
+    return null;
+  }
+  return selected.key;
+}
+
 function categorySummaries() {
   const categories = [
     { key: "rooms", label: "Rooms", capacity: capacityForCategory("rooms") },
@@ -623,6 +708,7 @@ function categorySummaries() {
 }
 
 function render() {
+  setOwnerOnlyVisibility();
   renderMetrics();
   renderMembers();
   renderSheetEditor();
@@ -630,6 +716,7 @@ function render() {
   renderLedger();
   renderBars();
   renderCashAccounting();
+  renderOwnerLedger();
 }
 
 function renderMetrics() {
@@ -1023,6 +1110,76 @@ function cashAmount(entry) {
   return entry.entry_type === "expense" ? -amount : amount;
 }
 
+function ownerAmount(entry) {
+  const amount = Number(entry.amount || 0);
+  return entry.entry_type === "expense" ? -amount : amount;
+}
+
+function isInternalTransfer(entry) {
+  if (entry.is_internal_transfer === true) return true;
+  const label = `${entry.category || ""} ${entry.source || ""}`.toLowerCase();
+  return label.includes("transfer to staff")
+    || label.includes("received from owner")
+    || label.includes("returned to owner")
+    || label.includes("received from staff");
+}
+
+function isQuickRevenueEntry(entry) {
+  const source = String(entry.source || "");
+  return ["Day Pass", "Weekly Pass", "Conference Room"].includes(source);
+}
+
+function paymentSourceTotals() {
+  const totals = Object.fromEntries(paymentSources.map((source) => [source.key, 0]));
+  payments.forEach((payment) => {
+    const source = payment.payment_source || "spaces_account";
+    totals[source] = (totals[source] || 0) + Number(payment.amount || 0);
+  });
+  [...cashEntries, ...ownerEntries].forEach((entry) => {
+    if (entry.entry_type !== "receiving" || isInternalTransfer(entry) || !isQuickRevenueEntry(entry)) return;
+    const source = entry.payment_source || (entry.created_by ? "staff" : "spaces_account");
+    totals[source] = (totals[source] || 0) + Number(entry.amount || 0);
+  });
+  return totals;
+}
+
+function financialSummary() {
+  const sourceTotals = paymentSourceTotals();
+  const totalRevenue = Object.values(sourceTotals).reduce((sum, amount) => sum + Number(amount || 0), 0);
+  const ownerExpenses = ownerEntries
+    .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const staffExpenses = cashEntries
+    .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const ownerCollectedRevenue = Number(sourceTotals.spaces_account || 0) + Number(sourceTotals.abrar_owner || 0);
+  const ownerNonRevenueReceiving = ownerEntries
+    .filter((entry) => entry.entry_type === "receiving")
+    .filter((entry) => !isQuickRevenueEntry(entry) && entry.source !== "Membership receipt")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const ownerOutgoing = ownerEntries
+    .filter((entry) => entry.entry_type === "expense")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const ownerBalance = ownerCollectedRevenue + ownerNonRevenueReceiving - ownerOutgoing;
+  const staffBalance = cashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
+  const outstanding = members
+    .filter((member) => !member.paid)
+    .reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0)
+    + members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
+  const companyExpenses = ownerExpenses + staffExpenses;
+  return {
+    sourceTotals,
+    totalRevenue,
+    ownerExpenses,
+    staffExpenses,
+    companyExpenses,
+    ownerBalance,
+    staffBalance,
+    outstanding,
+    netProfit: totalRevenue - companyExpenses
+  };
+}
+
 function monthKey(date = new Date()) {
   return isoDate(date).slice(0, 7);
 }
@@ -1073,7 +1230,7 @@ function canEditCashEntry(entry) {
 
 function cashEntryOptions(type, selected) {
   const options = type === "expense"
-    ? expenseCategories
+    ? [...expenseCategories, "Returned to Owner"]
     : ["Owner transfer - Abrar", ...plans.map((plan) => plan.name), "Day Pass", "Weekly Pass", "Conference Room", "Miscellaneous"];
   return options.map((option) => `
     <option value="${escapeAttr(option)}" ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>
@@ -1135,6 +1292,173 @@ function renderCashAccounting() {
     : `No cash entries for ${summary.key}`;
 }
 
+function ownerEntryOptions(type, selected) {
+  const options = type === "expense"
+    ? ownerExpenseCategories
+    : ["Received From Staff", "Spaces Account Deposit", "Owner Balance Adjustment", "Miscellaneous Receiving"];
+  return options.map((option) => `
+    <option value="${escapeAttr(option)}" ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>
+  `).join("");
+}
+
+function renderOwnerLedger() {
+  if (!canSeeRevenue() || !els.ownerSheet) return;
+  const summary = financialSummary();
+  els.financeRevenue.textContent = fmt.format(summary.totalRevenue);
+  els.financeOwnerExpenses.textContent = fmt.format(summary.ownerExpenses);
+  els.financeStaffExpenses.textContent = fmt.format(summary.staffExpenses);
+  els.financeCompanyExpenses.textContent = fmt.format(summary.companyExpenses);
+  els.financeNetProfit.textContent = fmt.format(summary.netProfit);
+  els.financeOwnerBalance.textContent = fmt.format(summary.ownerBalance);
+  els.financeStaffBalance.textContent = fmt.format(summary.staffBalance);
+  els.financeOutstanding.textContent = fmt.format(summary.outstanding);
+  els.financeSourceBreakdown.innerHTML = paymentSources.map((source) => `
+    <div class="source-pill">
+      <span>${source.label}</span>
+      <strong>${fmt.format(summary.sourceTotals[source.key] || 0)}</strong>
+    </div>
+  `).join("");
+
+  if (!ownerLedgerReady) {
+    els.ownerMessage.textContent = "Run the owner ledger SQL in Supabase to enable this section.";
+    els.ownerSheet.innerHTML = `<tr><td colspan="8">Owner ledger table is not enabled yet.</td></tr>`;
+    return;
+  }
+
+  const range = cashMonthRange(els.ownerMonth?.value || monthKey());
+  const query = els.ownerSearch.value.trim().toLowerCase();
+  const filtered = ownerEntries
+    .filter((entry) => isCashEntryInMonth(entry, range))
+    .filter((entry) => {
+      const haystack = [
+        entry.entry_type,
+        entry.category,
+        entry.source,
+        entry.payment_source,
+        entry.notes,
+        entry.attachment_note
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+
+  els.ownerSheet.innerHTML = filtered.length ? filtered.map((entry) => {
+    const categoryValue = entry.entry_type === "expense" ? entry.category : entry.source;
+    return `
+      <tr data-owner-id="${entry.id}" class="${isInternalTransfer(entry) ? "linked-transfer" : ""}">
+        <td><input data-field="entryDate" type="date" value="${escapeAttr(entry.entry_date)}"></td>
+        <td>
+          <select data-field="entryType">
+            <option value="expense" ${entry.entry_type === "expense" ? "selected" : ""}>Expense</option>
+            <option value="receiving" ${entry.entry_type === "receiving" ? "selected" : ""}>Receiving</option>
+          </select>
+        </td>
+        <td><select data-field="categorySource">${ownerEntryOptions(entry.entry_type, categoryValue)}</select></td>
+        <td><select data-field="paymentSource">${paymentSourceOptions(entry.payment_source || "abrar_owner")}</select></td>
+        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}"></td>
+        <td><textarea data-field="notes" rows="1">${escapeHtml(entry.notes)}</textarea></td>
+        <td><input data-field="attachment" value="${escapeAttr(entry.attachment_note)}"></td>
+        <td><button class="tiny-button" data-action="save-owner-row" data-id="${entry.id}" type="button">Save</button></td>
+      </tr>
+    `;
+  }).join("") : `<tr><td colspan="8">No owner ledger entries found for ${range.key}.</td></tr>`;
+
+  els.ownerMessage.textContent = filtered.length
+    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} for ${range.key}`
+    : `No owner entries for ${range.key}`;
+}
+
+async function insertCashLedgerEntry(row) {
+  return insertRow("cash_ledger", row);
+}
+
+async function insertOwnerLedgerEntry(row) {
+  return insertRow("owner_ledger", row);
+}
+
+async function insertPaymentRow(row) {
+  try {
+    return await insertRow("payments", row);
+  } catch (error) {
+    if (!String(error.message || "").includes("payment_source")) throw error;
+    const { payment_source: _paymentSource, ...legacyRow } = row;
+    console.warn("payments.payment_source unavailable; saving payment without source", error);
+    return insertRow("payments", legacyRow);
+  }
+}
+
+async function createOwnerEntryFromForm(form, entryType) {
+  const data = new FormData(form);
+  const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
+  const transferId = crypto.randomUUID();
+  const isTransferToStaff = entryType === "expense" && categoryOrSource === "Transfer to Staff";
+  const isReceivedFromStaff = entryType === "receiving" && categoryOrSource === "Received From Staff";
+  const ownerRow = await insertOwnerLedgerEntry({
+    entry_date: data.get("entryDate"),
+    entry_type: entryType,
+    category: entryType === "expense" ? categoryOrSource : null,
+    source: entryType === "receiving" ? categoryOrSource : null,
+    payment_source: data.get("paymentSource"),
+    amount: Number(data.get("amount") || 0),
+    notes: data.get("notes") || null,
+    attachment_note: data.get("attachment") || null,
+    is_internal_transfer: isTransferToStaff || isReceivedFromStaff,
+    transfer_group_id: (isTransferToStaff || isReceivedFromStaff) ? transferId : null
+  });
+
+  if (isTransferToStaff) {
+    const cashRow = await insertCashLedgerEntry({
+      entry_date: data.get("entryDate"),
+      entry_type: "receiving",
+      category: null,
+      source: "Received From Owner",
+      person_name: "Abrar",
+      amount: Number(data.get("amount") || 0),
+      notes: data.get("notes") || null,
+      payment_source: "staff",
+      is_internal_transfer: true,
+      transfer_group_id: transferId,
+      linked_owner_ledger_id: ownerRow.id
+    });
+    await patchRow("owner_ledger", ownerRow.id, { linked_cash_ledger_id: cashRow.id });
+  }
+
+  if (isReceivedFromStaff) {
+    const cashRow = await insertCashLedgerEntry({
+      entry_date: data.get("entryDate"),
+      entry_type: "expense",
+      category: "Returned to Owner",
+      source: null,
+      person_name: "Abrar",
+      amount: Number(data.get("amount") || 0),
+      notes: data.get("notes") || null,
+      payment_source: "staff",
+      is_internal_transfer: true,
+      transfer_group_id: transferId,
+      linked_owner_ledger_id: ownerRow.id
+    });
+    await patchRow("owner_ledger", ownerRow.id, { linked_cash_ledger_id: cashRow.id });
+  }
+}
+
+async function saveOwnerRow(id) {
+  const row = els.ownerSheet.querySelector(`tr[data-owner-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
+  const entryType = value("entryType");
+  const categorySource = value("categorySource");
+  await patchRow("owner_ledger", id, {
+    entry_date: value("entryDate"),
+    entry_type: entryType,
+    category: entryType === "expense" ? categorySource : null,
+    source: entryType === "receiving" ? categorySource : null,
+    payment_source: value("paymentSource"),
+    amount: Number(value("amount") || 0),
+    notes: value("notes") || null,
+    attachment_note: value("attachment") || null,
+    is_internal_transfer: isInternalTransfer({ entry_type: entryType, category: entryType === "expense" ? categorySource : null, source: entryType === "receiving" ? categorySource : null })
+  });
+}
+
 function renderPlans() {
   els.planList.innerHTML = plans.length ? plans.map((plan) => `
     <article class="plan-card">
@@ -1155,6 +1479,15 @@ function renderPlans() {
   els.expenseCategory.innerHTML = expenseCategories.map((category) => `
     <option value="${escapeAttr(category)}">${escapeHtml(category)}</option>
   `).join("");
+
+  if (els.ownerExpenseCategory) {
+    els.ownerExpenseCategory.innerHTML = ownerExpenseCategories.map((category) => `
+      <option value="${escapeAttr(category)}">${escapeHtml(category)}</option>
+    `).join("");
+    els.ownerExpenseSource.innerHTML = paymentSourceOptions("abrar_owner");
+    els.ownerReceivingPaymentSource.innerHTML = paymentSourceOptions("abrar_owner");
+    els.ownerReceivingSource.innerHTML = ownerEntryOptions("receiving", "Received From Staff");
+  }
 
   const receivingSources = [
     "Owner transfer - Abrar",
@@ -1325,9 +1658,49 @@ function rateLabel(member) {
   return `${fmt.format(monthlyFee)}<span class="rate-note">Standard ${fmt.format(basePrice)} | Discount ${fmt.format(discount)}</span>`;
 }
 
+async function recordCollectedAmount({ amount, paymentSource, entryDate, source, personName, notes }) {
+  const row = {
+    entry_date: entryDate || isoToday(),
+    entry_type: "receiving",
+    category: null,
+    source,
+    person_name: personName || null,
+    amount: Number(amount || 0),
+    notes: notes || null,
+    payment_source: paymentSource,
+    is_internal_transfer: false
+  };
+  if (paymentSource === "raza_manager" || paymentSource === "staff") {
+    try {
+      await insertCashLedgerEntry(row);
+    } catch (error) {
+      console.warn("Could not add receipt to staff cash ledger", error);
+    }
+    return;
+  }
+  if (paymentSource === "spaces_account" || paymentSource === "abrar_owner") {
+    try {
+      await insertOwnerLedgerEntry({
+        entry_date: row.entry_date,
+        entry_type: "receiving",
+        category: null,
+        source,
+        payment_source: paymentSource,
+        amount: row.amount,
+        notes: row.notes,
+        is_internal_transfer: false
+      });
+    } catch (error) {
+      console.warn("Could not add receipt to owner ledger", error);
+    }
+  }
+}
+
 async function markPaid(id) {
   const member = members.find((item) => item.id === id);
   if (!member) return;
+  const paymentSource = promptPaymentSource(`Payment source for ${member.name}`);
+  if (!paymentSource) return;
   try {
     setSyncStatus("Saving", "busy");
     const invoice = await createInvoice(member, {
@@ -1338,12 +1711,21 @@ async function markPaid(id) {
       validTill: member.validTill,
       showDiscount: Boolean(member.discountReason)
     });
-    await insertRow("payments", {
+    await insertPaymentRow({
       invoice_id: invoice.id,
       member_id: member.id,
       amount: Number(member.monthlyFee),
       payment_method: "cash",
+      payment_source: paymentSource,
       reference: invoice.invoice_number
+    });
+    await recordCollectedAmount({
+      amount: member.monthlyFee,
+      paymentSource,
+      entryDate: member.membershipFrom,
+      source: "Membership receipt",
+      personName: member.name,
+      notes: `${invoice.invoice_number} | ${member.plan}`
     });
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
@@ -1983,6 +2365,46 @@ function exportCashMonthlyReport() {
   downloadCsv(`spaces-cash-report-${summary.key}.csv`, rows);
 }
 
+function exportOwnerMonthlyReport() {
+  const range = cashMonthRange(els.ownerMonth?.value || monthKey());
+  const entries = ownerEntries
+    .filter((entry) => isCashEntryInMonth(entry, range))
+    .slice()
+    .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  const summary = financialSummary();
+  const rows = [
+    ["Spaces Coworking Owner Financial Report"],
+    ["Month", range.key],
+    ["Total revenue collected", summary.totalRevenue],
+    ["Owner expenses", summary.ownerExpenses],
+    ["Staff expenses", summary.staffExpenses],
+    ["Combined company expenses", summary.companyExpenses],
+    ["Owner balance", summary.ownerBalance],
+    ["Staff balance", summary.staffBalance],
+    ["Outstanding invoices", summary.outstanding],
+    ["Net profit", summary.netProfit],
+    [],
+    ["Revenue by source"],
+    ...paymentSources.map((source) => [source.label, summary.sourceTotals[source.key] || 0]),
+    [],
+    ["Date", "Type", "Category / Source", "Payment Source", "Amount", "Signed Amount", "Internal Transfer", "Notes", "Attachment"]
+  ];
+  entries.forEach((entry) => {
+    rows.push([
+      entry.entry_date,
+      entry.entry_type === "expense" ? "Expense" : "Receiving",
+      entry.entry_type === "expense" ? entry.category : entry.source,
+      paymentSourceLabel(entry.payment_source),
+      Number(entry.amount || 0),
+      ownerAmount(entry),
+      isInternalTransfer(entry) ? "Yes" : "No",
+      entry.notes,
+      entry.attachment_note
+    ]);
+  });
+  downloadCsv(`spaces-owner-report-${range.key}.csv`, rows);
+}
+
 function setDefaultDates() {
   const today = new Date();
   const renewal = addMonthsClamped(today, 1);
@@ -1990,7 +2412,10 @@ function setDefaultDates() {
   els.memberForm.elements.renewalDate.value = isoDate(renewal);
   els.expenseForm.elements.entryDate.value = isoToday();
   els.receivingForm.elements.entryDate.value = isoToday();
+  if (els.ownerExpenseForm) els.ownerExpenseForm.elements.entryDate.value = isoToday();
+  if (els.ownerReceivingForm) els.ownerReceivingForm.elements.entryDate.value = isoToday();
   if (els.cashMonth && !els.cashMonth.value) els.cashMonth.value = monthKey(today);
+  if (els.ownerMonth && !els.ownerMonth.value) els.ownerMonth.value = monthKey(today);
 }
 
 function syncPlanFields() {
@@ -2067,25 +2492,18 @@ async function generateQuickInvoice() {
     name: data.get("name"),
     phone: data.get("phone")
   };
-  if (paymentMode === "Raza") {
-    try {
-      await insertRow("cash_ledger", {
-        entry_date: isoToday(),
-        entry_type: "receiving",
-        category: null,
-        source: service.label,
-        person_name: customer.name,
-        amount,
-        notes: [
-          "Payment mode: Raza",
-          customer.phone ? `Contact: ${customer.phone}` : "",
-          note
-        ].filter(Boolean).join(" | ") || null
-      });
-    } catch (error) {
-      console.warn("Could not add quick receipt to staff cash ledger", error);
-    }
-  }
+  await recordCollectedAmount({
+    amount,
+    paymentSource: paymentMode,
+    entryDate: isoToday(),
+    source: service.label,
+    personName: customer.name,
+    notes: [
+      `Payment source: ${paymentSourceLabel(paymentMode)}`,
+      customer.phone ? `Contact: ${customer.phone}` : "",
+      note
+    ].filter(Boolean).join(" | ") || null
+  });
   openInvoice({
     id: `quick-${Date.now()}`,
     name: customer.name,
@@ -2107,7 +2525,7 @@ async function generateQuickInvoice() {
     unitPrice: service.rate,
     amount,
     ...validity,
-    note: [`Payment mode: ${paymentMode}`, note].filter(Boolean).join(" | ")
+    note: [`Payment source: ${paymentSourceLabel(paymentMode)}`, note].filter(Boolean).join(" | ")
   });
 }
 
@@ -2150,6 +2568,15 @@ document.addEventListener("click", (event) => {
       .then(loadData)
       .catch((error) => {
         alert(`Could not save cash row: ${error.message}`);
+        setSyncStatus("Error", "error");
+      });
+    return;
+  }
+  if (button.dataset.action === "save-owner-row") {
+    saveOwnerRow(button.dataset.id)
+      .then(loadData)
+      .catch((error) => {
+        alert(`Could not save owner ledger row: ${error.message}`);
         setSyncStatus("Error", "error");
       });
     return;
@@ -2228,6 +2655,9 @@ els.sheetSearch.addEventListener("input", renderSheetEditor);
 els.cashSearch.addEventListener("input", renderCashAccounting);
 els.cashMonth.addEventListener("change", renderCashAccounting);
 els.cashReport.addEventListener("click", exportCashMonthlyReport);
+els.ownerSearch.addEventListener("input", renderOwnerLedger);
+els.ownerMonth.addEventListener("change", renderOwnerLedger);
+els.ownerReport.addEventListener("click", exportOwnerMonthlyReport);
 els.memberSheet.addEventListener("input", (event) => {
   const row = event.target.closest("tr[data-member-id]");
   if (row) markSheetRowDirty(row);
@@ -2251,6 +2681,13 @@ els.cashSheet.addEventListener("change", (event) => {
   const categorySelect = row?.querySelector('[data-field="categorySource"]');
   if (!categorySelect) return;
   categorySelect.innerHTML = cashEntryOptions(event.target.value, "");
+});
+els.ownerSheet.addEventListener("change", (event) => {
+  if (event.target.dataset.field !== "entryType") return;
+  const row = event.target.closest("tr[data-owner-id]");
+  const categorySelect = row?.querySelector('[data-field="categorySource"]');
+  if (!categorySelect) return;
+  categorySelect.innerHTML = ownerEntryOptions(event.target.value, "");
 });
 els.saveAllSheetRows.addEventListener("click", saveChangedSheetRows);
 els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
@@ -2327,6 +2764,34 @@ els.receivingForm.addEventListener("submit", async (event) => {
     await loadData();
   } catch (error) {
     alert(`Could not save receiving: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
+});
+
+els.ownerExpenseForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    setSyncStatus("Saving", "busy");
+    await createOwnerEntryFromForm(els.ownerExpenseForm, "expense");
+    els.ownerExpenseForm.reset();
+    setDefaultDates();
+    await loadData();
+  } catch (error) {
+    alert(`Could not save owner expense: ${error.message}`);
+    setSyncStatus("Error", "error");
+  }
+});
+
+els.ownerReceivingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    setSyncStatus("Saving", "busy");
+    await createOwnerEntryFromForm(els.ownerReceivingForm, "receiving");
+    els.ownerReceivingForm.reset();
+    setDefaultDates();
+    await loadData();
+  } catch (error) {
+    alert(`Could not save owner receiving: ${error.message}`);
     setSyncStatus("Error", "error");
   }
 });

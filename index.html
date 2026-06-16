@@ -36,6 +36,7 @@
           <a href="#receipts">Receipts</a>
           <a href="#quick-invoice">Quick Invoice</a>
           <a href="#cash-accounting">Staff Cash</a>
+          <a class="owner-only" href="#owner-ledger">Owner Ledger</a>
           <a href="#accounting">Accounting</a>
           <a href="#plans">Plans</a>
         </nav>
@@ -133,10 +134,10 @@
               <label><span id="quickQuantityLabel">No. of people</span><input required name="quantity" id="quickQuantity" type="number" min="1" value="1"></label>
               <label>Payment mode
                 <select required name="paymentMode">
-                  <option value="Raza">Raza</option>
-                  <option value="Bank transfer">Bank transfer</option>
-                  <option value="Owner / Abrar">Owner / Abrar</option>
-                  <option value="Other">Other</option>
+                  <option value="spaces_account">Spaces Account</option>
+                  <option value="raza_manager">Raza / Manager</option>
+                  <option value="staff">Staff</option>
+                  <option value="abrar_owner">Abrar / Owner</option>
                 </select>
               </label>
               <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
@@ -236,6 +237,114 @@
                 </tr>
               </thead>
               <tbody id="cashSheet"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel cash-panel owner-only" id="owner-ledger">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Owner only</p>
+              <h2>Owner expense ledger and balances</h2>
+            </div>
+            <div class="cash-controls">
+              <label>Report month<input id="ownerMonth" type="month"></label>
+              <button class="ghost-button" id="ownerReport" type="button">Generate owner report</button>
+            </div>
+          </div>
+          <div class="cash-summary-grid financial-grid">
+            <div class="cash-balance">
+              <span>Total revenue collected</span>
+              <strong id="financeRevenue">PKR 0</strong>
+            </div>
+            <div class="cash-balance expense-balance">
+              <span>Owner expenses</span>
+              <strong id="financeOwnerExpenses">PKR 0</strong>
+            </div>
+            <div class="cash-balance expense-balance">
+              <span>Staff expenses</span>
+              <strong id="financeStaffExpenses">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Net profit</span>
+              <strong id="financeNetProfit">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Owner balance</span>
+              <strong id="financeOwnerBalance">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Staff balance</span>
+              <strong id="financeStaffBalance">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Outstanding invoices</span>
+              <strong id="financeOutstanding">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Combined expenses</span>
+              <strong id="financeCompanyExpenses">PKR 0</strong>
+            </div>
+          </div>
+          <div class="source-breakdown" id="financeSourceBreakdown"></div>
+          <div class="cash-entry-grid">
+            <form id="ownerExpenseForm" class="staff-form compact-form">
+              <div class="section-heading">
+                <p class="eyebrow">Owner expense</p>
+                <h2>Add owner expense</h2>
+              </div>
+              <div class="form-grid compact-grid">
+                <label>Date<input required name="entryDate" type="date"></label>
+                <label>Category<select required name="category" id="ownerExpenseCategory"></select></label>
+                <label>Payment source<select required name="paymentSource" id="ownerExpenseSource"></select></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Reason, vendor, transfer details"></textarea></label>
+                <label class="span-two">Attachment note<input name="attachment" placeholder="Bill link, file name, or WhatsApp reference"></label>
+              </div>
+              <div class="modal-actions inline-actions">
+                <button class="primary-button" type="submit">Save owner expense</button>
+              </div>
+            </form>
+
+            <form id="ownerReceivingForm" class="staff-form compact-form">
+              <div class="section-heading">
+                <p class="eyebrow">Owner receiving</p>
+                <h2>Add owner receiving</h2>
+              </div>
+              <div class="form-grid compact-grid">
+                <label>Date<input required name="entryDate" type="date"></label>
+                <label>Source<select required name="source" id="ownerReceivingSource"></select></label>
+                <label>Payment source<select required name="paymentSource" id="ownerReceivingPaymentSource"></select></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Received from staff, bank adjustment, other note"></textarea></label>
+              </div>
+              <div class="modal-actions inline-actions">
+                <button class="primary-button" type="submit">Save owner receiving</button>
+              </div>
+            </form>
+          </div>
+          <div class="sheet-toolbar">
+            <label class="search">
+              <span>Filter owner ledger</span>
+              <input id="ownerSearch" type="search" placeholder="Category, source, notes">
+            </label>
+            <span class="sheet-message" id="ownerMessage">Synced owner ledger</span>
+          </div>
+          <div class="sheet-wrap">
+            <table class="cash-table sheet-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Category / Source</th>
+                  <th>Payment Source</th>
+                  <th>Amount</th>
+                  <th>Notes</th>
+                  <th>Attachment</th>
+                  <th>Save</th>
+                </tr>
+              </thead>
+              <tbody id="ownerSheet"></tbody>
             </table>
           </div>
         </section>

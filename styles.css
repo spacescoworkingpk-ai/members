@@ -495,6 +495,35 @@ h2 {
   margin: 12px 0 16px;
 }
 
+.financial-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.source-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #cfe6f2;
+  border-radius: 999px;
+  background: #f1f9fc;
+  color: #174255;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.source-pill strong {
+  color: var(--ink);
+}
+
 .cash-entry-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -554,6 +583,10 @@ h2 {
 
 .cash-table tr.locked {
   opacity: 0.72;
+}
+
+.cash-table tr.linked-transfer td {
+  background: #f6fbfd;
 }
 
 .locked-note {
