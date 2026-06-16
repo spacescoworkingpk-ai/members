@@ -94,6 +94,7 @@ let invoices = [];
 let payments = [];
 let cashEntries = [];
 let ownerEntries = [];
+let salesReceiptsReady = true;
 let cashLedgerReady = true;
 let ownerLedgerReady = true;
 let memberPlanItemsReady = true;
@@ -168,6 +169,7 @@ const els = {
   expenseCategory: document.querySelector("#expenseCategory"),
   receivingForm: document.querySelector("#receivingForm"),
   receivingSource: document.querySelector("#receivingSource"),
+  receivingPaymentSource: document.querySelector("#receivingPaymentSource"),
   cashSearch: document.querySelector("#cashSearch"),
   cashMessage: document.querySelector("#cashMessage"),
   cashSheet: document.querySelector("#cashSheet"),
@@ -316,11 +318,14 @@ async function loadStaffProfile() {
 async function loadData() {
   setSyncStatus("Syncing", "busy");
   staffProfile = await loadStaffProfile();
+  const invoiceSelect = canSeeRevenue()
+    ? "select=*&order=created_at.desc"
+    : "select=id,invoice_number,member_id,invoice_type,issue_date,valid_till,status,created_at&order=created_at.desc";
   const [planRows, memberRows, invoiceRows, paymentRows] = await Promise.all([
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
     selectRows("members", "select=*&order=created_at.desc"),
-    selectRows("invoices", "select=*&order=created_at.desc"),
-    selectRows("payments", "select=*&order=paid_at.desc")
+    selectRows("invoices", invoiceSelect),
+    canSeeRevenue() ? selectRows("payments", "select=*&order=paid_at.desc") : Promise.resolve([])
   ]);
   try {
     cashEntries = await selectRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc");
@@ -993,6 +998,11 @@ async function deleteMember(id) {
 async function createCashEntryFromForm(form, entryType) {
   const data = new FormData(form);
   const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
+  const isInternal = isInternalTransfer({
+    entry_type: entryType,
+    category: entryType === "expense" ? categoryOrSource : null,
+    source: entryType === "receiving" ? categoryOrSource : null
+  });
   await insertRow("cash_ledger", {
     entry_date: data.get("entryDate"),
     entry_type: entryType,
@@ -1000,7 +1010,9 @@ async function createCashEntryFromForm(form, entryType) {
     source: entryType === "receiving" ? categoryOrSource : null,
     person_name: data.get("personName") || null,
     amount: Number(data.get("amount") || 0),
-    notes: data.get("notes") || null
+    notes: data.get("notes") || null,
+    payment_source: data.get("paymentSource") || (entryType === "receiving" ? "staff" : null),
+    is_internal_transfer: isInternal
   });
 }
 
@@ -1023,10 +1035,11 @@ async function replaceMemberPlanItems(memberId, items) {
 async function saveCashRow(id) {
   const row = els.cashSheet.querySelector(`tr[data-cash-id="${CSS.escape(id)}"]`);
   if (!row) return;
+  const existing = cashEntries.find((entry) => entry.id === id);
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
   const entryType = value("entryType");
   const categorySource = value("categorySource");
-  await patchRow("cash_ledger", id, {
+  const changes = {
     entry_date: value("entryDate"),
     entry_type: entryType,
     category: entryType === "expense" ? categorySource : null,
@@ -1034,7 +1047,18 @@ async function saveCashRow(id) {
     person_name: value("personName") || null,
     amount: Number(value("amount") || 0),
     notes: value("notes") || null
-  });
+  };
+  const nextRow = { ...existing, ...changes };
+  if (!existing?.linked_owner_ledger_id && isInternalTransfer(nextRow)) {
+    throw new Error("Internal transfers must be created from the Owner Ledger so both sides stay linked.");
+  }
+  if (existing?.linked_owner_ledger_id && !isInternalTransfer(nextRow)) {
+    throw new Error("Linked transfer rows cannot be changed into normal cash rows. Add a correcting entry instead.");
+  }
+  await patchRow("cash_ledger", id, changes);
+  if (existing?.linked_owner_ledger_id && isInternalTransfer(nextRow)) {
+    await syncOwnerFromCashRow(existing.linked_owner_ledger_id, nextRow);
+  }
 }
 
 function renderReceipts() {
@@ -1129,13 +1153,19 @@ function isQuickRevenueEntry(entry) {
   return ["Day Pass", "Weekly Pass", "Conference Room"].includes(source);
 }
 
-function paymentSourceTotals() {
+function entryInRange(entry, range, dateField = "entry_date") {
+  if (!range) return true;
+  const value = String(entry[dateField] || "").slice(0, 10);
+  return value >= range.start && value < range.end;
+}
+
+function paymentSourceTotals(range = null) {
   const totals = Object.fromEntries(paymentSources.map((source) => [source.key, 0]));
-  payments.forEach((payment) => {
+  payments.filter((payment) => entryInRange(payment, range, "paid_at")).forEach((payment) => {
     const source = payment.payment_source || "spaces_account";
     totals[source] = (totals[source] || 0) + Number(payment.amount || 0);
   });
-  [...cashEntries, ...ownerEntries].forEach((entry) => {
+  [...cashEntries, ...ownerEntries].filter((entry) => entryInRange(entry, range)).forEach((entry) => {
     if (entry.entry_type !== "receiving" || isInternalTransfer(entry) || !isQuickRevenueEntry(entry)) return;
     const source = entry.payment_source || (entry.created_by ? "staff" : "spaces_account");
     totals[source] = (totals[source] || 0) + Number(entry.amount || 0);
@@ -1143,25 +1173,27 @@ function paymentSourceTotals() {
   return totals;
 }
 
-function financialSummary() {
-  const sourceTotals = paymentSourceTotals();
+function financialSummary(range = null) {
+  const sourceTotals = paymentSourceTotals(range);
   const totalRevenue = Object.values(sourceTotals).reduce((sum, amount) => sum + Number(amount || 0), 0);
-  const ownerExpenses = ownerEntries
+  const scopedOwnerEntries = ownerEntries.filter((entry) => entryInRange(entry, range));
+  const scopedCashEntries = cashEntries.filter((entry) => entryInRange(entry, range));
+  const ownerExpenses = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const staffExpenses = cashEntries
+  const staffExpenses = scopedCashEntries
     .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerCollectedRevenue = Number(sourceTotals.spaces_account || 0) + Number(sourceTotals.abrar_owner || 0);
-  const ownerNonRevenueReceiving = ownerEntries
+  const ownerNonRevenueReceiving = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "receiving")
     .filter((entry) => !isQuickRevenueEntry(entry) && entry.source !== "Membership receipt")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const ownerOutgoing = ownerEntries
+  const ownerOutgoing = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "expense")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerBalance = ownerCollectedRevenue + ownerNonRevenueReceiving - ownerOutgoing;
-  const staffBalance = cashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
+  const staffBalance = scopedCashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
   const outstanding = members
     .filter((member) => !member.paid)
     .reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0)
@@ -1209,14 +1241,19 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
     .filter((entry) => entry.entry_type === "receiving")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const expenses = monthEntries
-    .filter((entry) => entry.entry_type === "expense")
+    .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const internalMovements = monthEntries
+    .filter(isInternalTransfer)
+    .reduce((sum, entry) => sum + Math.abs(cashAmount(entry)), 0);
+  const movementTotal = monthEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
   return {
     ...range,
     opening,
     received,
     expenses,
-    closing: opening + received - expenses,
+    internalMovements,
+    closing: opening + movementTotal,
     entries: monthEntries
   };
 }
@@ -1288,7 +1325,7 @@ function renderCashAccounting() {
   }).join("") : `<tr><td colspan="7">No cash entries found. Run the cash ledger SQL if this section has not been enabled yet.</td></tr>`;
 
   els.cashMessage.textContent = filtered.length
-    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} for ${summary.key} | Staff can edit own rows for 3 days`
+    ? `${filtered.length} row${filtered.length === 1 ? "" : "s"} for ${summary.key} | Internal movements ${fmt.format(summary.internalMovements)} | Staff can edit own rows for 3 days`
     : `No cash entries for ${summary.key}`;
 }
 
@@ -1377,12 +1414,33 @@ async function insertOwnerLedgerEntry(row) {
 
 async function insertPaymentRow(row) {
   try {
-    return await insertRow("payments", row);
+    await supabaseRequest("/rest/v1/payments", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: row
+    });
+    return true;
   } catch (error) {
     if (!String(error.message || "").includes("payment_source")) throw error;
     const { payment_source: _paymentSource, ...legacyRow } = row;
     console.warn("payments.payment_source unavailable; saving payment without source", error);
-    return insertRow("payments", legacyRow);
+    await supabaseRequest("/rest/v1/payments", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: legacyRow
+    });
+    return true;
+  }
+}
+
+async function insertSalesReceipt(row) {
+  if (!salesReceiptsReady) return null;
+  try {
+    return await insertRow("sales_receipts", row);
+  } catch (error) {
+    salesReceiptsReady = false;
+    console.warn("sales_receipts unavailable", error);
+    return null;
   }
 }
 
@@ -1443,10 +1501,11 @@ async function createOwnerEntryFromForm(form, entryType) {
 async function saveOwnerRow(id) {
   const row = els.ownerSheet.querySelector(`tr[data-owner-id="${CSS.escape(id)}"]`);
   if (!row) return;
+  const existing = ownerEntries.find((entry) => entry.id === id);
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
   const entryType = value("entryType");
   const categorySource = value("categorySource");
-  await patchRow("owner_ledger", id, {
+  const changes = {
     entry_date: value("entryDate"),
     entry_type: entryType,
     category: entryType === "expense" ? categorySource : null,
@@ -1456,7 +1515,109 @@ async function saveOwnerRow(id) {
     notes: value("notes") || null,
     attachment_note: value("attachment") || null,
     is_internal_transfer: isInternalTransfer({ entry_type: entryType, category: entryType === "expense" ? categorySource : null, source: entryType === "receiving" ? categorySource : null })
-  });
+  };
+  const nextRow = { ...existing, ...changes };
+  if (existing?.linked_cash_ledger_id && !isInternalTransfer(nextRow)) {
+    throw new Error("Linked transfer rows cannot be changed into normal owner rows. Add a correcting entry instead.");
+  }
+  await patchRow("owner_ledger", id, changes);
+  if (existing?.linked_cash_ledger_id && isInternalTransfer(nextRow)) {
+    await syncCashFromOwnerRow(existing.linked_cash_ledger_id, nextRow);
+  } else if (!existing?.linked_cash_ledger_id && isInternalTransfer(nextRow)) {
+    await createLinkedCashForOwnerRow(id, nextRow);
+  }
+}
+
+async function createLinkedCashForOwnerRow(ownerId, ownerRow) {
+  if (ownerRow.entry_type === "expense" && ownerRow.category === "Transfer to Staff") {
+    const cashRow = await insertCashLedgerEntry({
+      entry_date: ownerRow.entry_date,
+      entry_type: "receiving",
+      category: null,
+      source: "Received From Owner",
+      person_name: "Abrar",
+      amount: Number(ownerRow.amount || 0),
+      notes: ownerRow.notes || null,
+      payment_source: "staff",
+      is_internal_transfer: true,
+      transfer_group_id: ownerRow.transfer_group_id || crypto.randomUUID(),
+      linked_owner_ledger_id: ownerId
+    });
+    await patchRow("owner_ledger", ownerId, { linked_cash_ledger_id: cashRow.id, transfer_group_id: cashRow.transfer_group_id });
+    return;
+  }
+  if (ownerRow.entry_type === "receiving" && ownerRow.source === "Received From Staff") {
+    const cashRow = await insertCashLedgerEntry({
+      entry_date: ownerRow.entry_date,
+      entry_type: "expense",
+      category: "Returned to Owner",
+      source: null,
+      person_name: "Abrar",
+      amount: Number(ownerRow.amount || 0),
+      notes: ownerRow.notes || null,
+      payment_source: "staff",
+      is_internal_transfer: true,
+      transfer_group_id: ownerRow.transfer_group_id || crypto.randomUUID(),
+      linked_owner_ledger_id: ownerId
+    });
+    await patchRow("owner_ledger", ownerId, { linked_cash_ledger_id: cashRow.id, transfer_group_id: cashRow.transfer_group_id });
+  }
+}
+
+async function syncCashFromOwnerRow(cashId, ownerRow) {
+  if (ownerRow.entry_type === "expense" && ownerRow.category === "Transfer to Staff") {
+    await patchRow("cash_ledger", cashId, {
+      entry_date: ownerRow.entry_date,
+      entry_type: "receiving",
+      category: null,
+      source: "Received From Owner",
+      person_name: "Abrar",
+      amount: Number(ownerRow.amount || 0),
+      notes: ownerRow.notes || null,
+      payment_source: "staff",
+      is_internal_transfer: true
+    });
+    return;
+  }
+  if (ownerRow.entry_type === "receiving" && ownerRow.source === "Received From Staff") {
+    await patchRow("cash_ledger", cashId, {
+      entry_date: ownerRow.entry_date,
+      entry_type: "expense",
+      category: "Returned to Owner",
+      source: null,
+      person_name: "Abrar",
+      amount: Number(ownerRow.amount || 0),
+      notes: ownerRow.notes || null,
+      payment_source: "staff",
+      is_internal_transfer: true
+    });
+  }
+}
+
+async function syncOwnerFromCashRow(ownerId, cashRow) {
+  if (cashRow.entry_type === "receiving" && cashRow.source === "Received From Owner") {
+    await patchRow("owner_ledger", ownerId, {
+      entry_date: cashRow.entry_date,
+      entry_type: "expense",
+      category: "Transfer to Staff",
+      source: null,
+      amount: Number(cashRow.amount || 0),
+      notes: cashRow.notes || null,
+      is_internal_transfer: true
+    });
+    return;
+  }
+  if (cashRow.entry_type === "expense" && cashRow.category === "Returned to Owner") {
+    await patchRow("owner_ledger", ownerId, {
+      entry_date: cashRow.entry_date,
+      entry_type: "receiving",
+      category: null,
+      source: "Received From Staff",
+      amount: Number(cashRow.amount || 0),
+      notes: cashRow.notes || null,
+      is_internal_transfer: true
+    });
+  }
 }
 
 function renderPlans() {
@@ -1500,6 +1661,7 @@ function renderPlans() {
   els.receivingSource.innerHTML = receivingSources.map((source) => `
     <option value="${escapeAttr(source)}">${escapeHtml(source)}</option>
   `).join("");
+  els.receivingPaymentSource.innerHTML = paymentSourceOptions("staff");
 }
 
 function planOptionHtml(selectedPlanName) {
@@ -2371,7 +2533,7 @@ function exportOwnerMonthlyReport() {
     .filter((entry) => isCashEntryInMonth(entry, range))
     .slice()
     .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
-  const summary = financialSummary();
+  const summary = financialSummary(range);
   const rows = [
     ["Spaces Coworking Owner Financial Report"],
     ["Month", range.key],
@@ -2488,10 +2650,24 @@ async function generateQuickInvoice() {
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
   const paymentMode = data.get("paymentMode");
+  const receiptNumber = `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
   const customer = {
     name: data.get("name"),
     phone: data.get("phone")
   };
+  await insertSalesReceipt({
+    receipt_number: receiptNumber,
+    customer_name: customer.name,
+    phone: customer.phone,
+    service_name: service.label,
+    quantity,
+    unit_rate: service.rate,
+    total_amount: amount,
+    payment_source: paymentMode,
+    receipt_date: validity.receiptDate,
+    valid_till: validity.validTill,
+    notes: note || null
+  });
   await recordCollectedAmount({
     amount,
     paymentSource: paymentMode,
@@ -2518,7 +2694,7 @@ async function generateQuickInvoice() {
   }, {
     mode: "quick",
     title: "Spaces Temporary Receipt",
-    invoiceId: `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+    invoiceId: receiptNumber,
     description: `${service.label} - ${quantity} ${service.unitName}`,
     seats: quantity,
     standardPrice: amount,
