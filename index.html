@@ -33,8 +33,8 @@
           <a href="#dashboard" class="active">Dashboard</a>
           <a href="#members">Members</a>
           <a href="#receipts">Receipts</a>
-          <a href="#cash-accounting">Staff Cash</a>
-          <a class="owner-only" href="#owner-ledger">Owner Ledger</a>
+          <a href="#cash-accounting">Staff Spending</a>
+          <a class="owner-only" href="#owner-ledger">Business Ledger</a>
           <a href="#accounting">Accounting</a>
           <a href="#plans">Plans</a>
         </nav>
@@ -55,7 +55,7 @@
             <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
             <button class="ghost-button" id="logoutButton" type="button">Logout</button>
             <a class="ghost-button" href="#receipts">Quick invoice</a>
-            <a class="ghost-button" href="#cash-accounting">Staff cash</a>
+            <a class="ghost-button" href="#cash-accounting">Staff spending</a>
             <a class="primary-button" href="#members">Add member</a>
           </div>
         </header>
@@ -153,8 +153,8 @@
         <section class="panel cash-panel page-section" id="cash-accounting" data-page="cash-accounting">
           <div class="section-heading row">
             <div>
-              <p class="eyebrow">Staff cash accounting</p>
-              <h2>Expenses, receiving, and cash in hand</h2>
+              <p class="eyebrow">Staff spending</p>
+              <h2>Expenses, card spend, and petty cash</h2>
             </div>
             <div class="cash-controls">
               <label>Report month<input id="cashMonth" type="month"></label>
@@ -171,11 +171,11 @@
               <strong id="cashReceivedMonth">PKR 0</strong>
             </div>
             <div class="cash-balance expense-balance">
-              <span>Operational expenses</span>
+              <span>Staff expenses</span>
               <strong id="cashExpensesMonth">PKR 0</strong>
             </div>
             <div class="cash-balance">
-              <span>Closing cash in hand</span>
+              <span>Petty cash in hand</span>
               <strong id="cashBalance">PKR 0</strong>
             </div>
           </div>
@@ -188,6 +188,10 @@
               <div class="form-grid compact-grid">
                 <label>Date<input required name="entryDate" type="date"></label>
                 <label>Category<select required name="category" id="expenseCategory"></select></label>
+                <label>Paid using<select required name="paymentMethod" id="expensePaymentMethod">
+                  <option value="petty_cash">Cash / Petty cash</option>
+                  <option value="business_card">Business debit card</option>
+                </select></label>
                 <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
                 <label>Paid to<input name="personName" placeholder="Vendor / person"></label>
                 <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Bill number, reason, staff notes"></textarea></label>
@@ -217,7 +221,7 @@
           </div>
           <div class="sheet-toolbar">
             <label class="search">
-              <span>Filter cash sheet</span>
+              <span>Filter staff sheet</span>
               <input id="cashSearch" type="search" placeholder="Category, source, person, notes">
             </label>
             <span class="sheet-message" id="cashMessage">Synced cash entries</span>
@@ -229,6 +233,7 @@
                   <th>Date</th>
                   <th>Type</th>
                   <th>Category / Source</th>
+                  <th>Paid Using</th>
                   <th>Person</th>
                   <th>Amount</th>
                   <th>Notes</th>
@@ -244,7 +249,7 @@
           <div class="section-heading row">
             <div>
               <p class="eyebrow">Owner only</p>
-              <h2>Owner expense ledger and balances</h2>
+              <h2>Business account, owner ledger, and balances</h2>
             </div>
             <div class="cash-controls">
               <label>Report month<input id="ownerMonth" type="month"></label>
@@ -269,11 +274,11 @@
               <strong id="financeNetProfit">PKR 0</strong>
             </div>
             <div class="cash-balance">
-              <span>Owner balance</span>
+              <span>Business / owner balance</span>
               <strong id="financeOwnerBalance">PKR 0</strong>
             </div>
             <div class="cash-balance">
-              <span>Staff balance</span>
+              <span>Staff petty cash</span>
               <strong id="financeStaffBalance">PKR 0</strong>
             </div>
             <div class="cash-balance">
@@ -344,6 +349,32 @@
                 </tr>
               </thead>
               <tbody id="ownerSheet"></tbody>
+            </table>
+          </div>
+          <div class="section-heading row ledger-audit-heading">
+            <div>
+              <p class="eyebrow">Audit log</p>
+              <h2>Recent transaction and client changes</h2>
+            </div>
+            <div class="sheet-actions">
+              <button class="ghost-button" id="auditReport" type="button">Export audit CSV</button>
+              <span class="sheet-message" id="auditMessage">Synced audit log</span>
+            </div>
+          </div>
+          <div class="sheet-wrap audit-wrap">
+            <table class="cash-table audit-table sheet-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Action</th>
+                  <th>Table</th>
+                  <th>Record</th>
+                  <th>Summary</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogSheet"></tbody>
             </table>
           </div>
         </section>

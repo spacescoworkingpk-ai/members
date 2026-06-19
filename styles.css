@@ -1651,18 +1651,22 @@ label textarea {
   }
 
   .cash-table td:nth-child(4)::before {
-    content: "Person";
+    content: "Paid Using";
   }
 
   .cash-table td:nth-child(5)::before {
-    content: "Amount";
+    content: "Person";
   }
 
   .cash-table td:nth-child(6)::before {
-    content: "Notes";
+    content: "Amount";
   }
 
   .cash-table td:nth-child(7)::before {
+    content: "Notes";
+  }
+
+  .cash-table td:nth-child(8)::before {
     content: "Save";
   }
 
@@ -1688,6 +1692,34 @@ label textarea {
 
   .owner-table td:nth-child(8)::before {
     content: "Save";
+  }
+
+  .audit-table td:nth-child(1)::before {
+    content: "Time";
+  }
+
+  .audit-table td:nth-child(2)::before {
+    content: "Action";
+  }
+
+  .audit-table td:nth-child(3)::before {
+    content: "Table";
+  }
+
+  .audit-table td:nth-child(4)::before {
+    content: "Record";
+  }
+
+  .audit-table td:nth-child(5)::before {
+    content: "Summary";
+  }
+
+  .audit-table td:nth-child(6)::before {
+    content: "Before";
+  }
+
+  .audit-table td:nth-child(7)::before {
+    content: "After";
   }
 
   .member-table td:last-child,
