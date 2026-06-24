@@ -1136,13 +1136,41 @@ label textarea {
   bottom: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(4, max-content);
+  grid-template-columns: repeat(5, max-content);
   justify-content: end;
   align-items: center;
   gap: 10px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
+}
+
+.receipt-send-status {
+  min-height: 42px;
+  padding: 11px 22px;
+  border-top: 1px solid var(--line);
+  background: #f7fafb;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.receipt-send-status:empty {
+  display: none;
+}
+
+.receipt-send-status.success {
+  background: #eaf6ee;
+  color: #255f36;
+}
+
+.receipt-send-status.error {
+  background: #fff1ee;
+  color: #8a3f31;
+}
+
+.receipt-send-status.busy {
+  color: var(--brand-dark);
 }
 
 .receipt-preview {
@@ -1864,5 +1892,10 @@ label textarea {
     grid-column: 1 / -1;
     min-height: 50px;
     font-size: 15px;
+  }
+
+  #receiptDialog .manual-whatsapp:not([hidden]) {
+    grid-column: 1 / -1;
+    min-height: 46px;
   }
 }

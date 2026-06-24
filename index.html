@@ -554,11 +554,13 @@
 
     <dialog id="receiptDialog">
       <div class="receipt-preview" id="receiptPreview"></div>
+      <div class="receipt-send-status" id="receiptSendStatus" role="status" aria-live="polite"></div>
       <div class="modal-actions receipt-actions">
         <button class="ghost-button" id="closeReceipt" type="button">Close</button>
         <button class="ghost-button" id="printReceipt" type="button">Print</button>
         <button class="ghost-button" id="downloadReceipt" type="button">Save PDF</button>
-        <a class="primary-button" id="whatsappReceipt" target="_blank" rel="noreferrer">Share WhatsApp</a>
+        <button class="primary-button" id="whatsappReceipt" type="button">Send WhatsApp PDF</button>
+        <a class="ghost-button manual-whatsapp" id="manualWhatsappReceipt" target="_blank" rel="noreferrer" hidden>Open WhatsApp</a>
       </div>
     </dialog>
 

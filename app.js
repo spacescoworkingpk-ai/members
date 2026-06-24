@@ -114,7 +114,8 @@ let memberFormPlanLines = [];
 let currentReceiptShare = {
   message: "",
   fileName: "spaces-receipt.png",
-  receipt: null
+  receipt: null,
+  memberId: null
 };
 
 const sessionKey = "spaces-coworking-staff-session";
@@ -213,6 +214,8 @@ const els = {
   receiptDialog: document.querySelector("#receiptDialog"),
   receiptPreview: document.querySelector("#receiptPreview"),
   whatsappReceipt: document.querySelector("#whatsappReceipt"),
+  manualWhatsappReceipt: document.querySelector("#manualWhatsappReceipt"),
+  receiptSendStatus: document.querySelector("#receiptSendStatus"),
   closeReceipt: document.querySelector("#closeReceipt"),
   printReceipt: document.querySelector("#printReceipt"),
   downloadReceipt: document.querySelector("#downloadReceipt"),
@@ -2151,6 +2154,7 @@ async function markPaid(id, control = null) {
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
     openInvoice(updatedMember, { mode: "receipt", invoiceId: invoiceNumber });
+    await sendCurrentReceipt({ automatic: true }).catch(() => null);
   }, {
     busyText: "Saving...",
     successTitle: "Receipt marked paid",
@@ -2240,6 +2244,7 @@ function openInvoice(member, override = {}) {
   currentReceiptShare = {
     message,
     fileName: `${invoiceId.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-spaces-receipt.png`,
+    memberId: member.id || null,
     receipt: {
       invoiceId,
       invoiceTitle,
@@ -2250,6 +2255,7 @@ function openInvoice(member, override = {}) {
       issuedDate,
       issuedDateLabel,
       validText,
+      validTill: override.validTill || member.validTill || member.renewalDate,
       description,
       quantity,
       lines,
@@ -2357,7 +2363,10 @@ function openInvoice(member, override = {}) {
       </footer>
     </div>
   `;
-  els.whatsappReceipt.href = `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`;
+  els.manualWhatsappReceipt.href = `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`;
+  els.manualWhatsappReceipt.hidden = true;
+  setReceiptSendStatus("");
+  els.whatsappReceipt.textContent = "Send WhatsApp PDF";
   els.receiptDialog.showModal();
 }
 
@@ -2657,7 +2666,77 @@ function receiptCanvasFallbackFile() {
   return canvasBlob(canvas).then((blob) => new File([blob], currentReceiptShare.fileName, { type: "image/png" }));
 }
 
+function setReceiptSendStatus(message, type = "") {
+  els.receiptSendStatus.textContent = message;
+  els.receiptSendStatus.className = `receipt-send-status${type ? ` ${type}` : ""}`;
+}
+
+async function sendCurrentReceipt({ automatic = false } = {}) {
+  if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
+  const originalText = els.whatsappReceipt.textContent;
+  els.whatsappReceipt.disabled = true;
+  els.whatsappReceipt.textContent = "Sending...";
+  setReceiptSendStatus(
+    automatic ? "Payment saved. Sending the PDF receipt automatically..." : "Sending the PDF receipt...",
+    "busy"
+  );
+
+  try {
+    const response = await fetch("/api/send-receipt", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session?.access_token || ""}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        memberId: currentReceiptShare.memberId,
+        phone: currentReceiptShare.receipt.phone,
+        fileName: currentReceiptShare.fileName.replace(/\.png$/i, ".pdf"),
+        receipt: currentReceiptShare.receipt,
+        sendStaffCopy: true
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || "Could not send the WhatsApp receipt.");
+      error.code = payload.code;
+      throw error;
+    }
+    const copyText = payload.staffCopy?.ok
+      ? " A copy was also sent to this staff account's WhatsApp number."
+      : payload.staffCopy?.error
+        ? ` The customer copy was sent, but the staff copy failed: ${payload.staffCopy.error}`
+        : " Customer receipt sent. No staff copy number is configured for this login.";
+    setReceiptSendStatus(`PDF receipt sent to ${currentReceiptShare.receipt.customerName}.${copyText}`, "success");
+    els.whatsappReceipt.textContent = "Send again";
+    showToast("WhatsApp receipt sent", `${currentReceiptShare.receipt.customerName} received the PDF.`);
+    return payload;
+  } catch (error) {
+    console.warn("Automatic WhatsApp receipt failed", error);
+    els.manualWhatsappReceipt.hidden = false;
+    const setupNeeded = error.code === "WHATSAPP_SETUP_NEEDED";
+    setReceiptSendStatus(
+      setupNeeded
+        ? "Payment is saved. Meta/Vercel setup is still required; use Open WhatsApp for now."
+        : `Payment is saved, but WhatsApp sending failed: ${error.message}`,
+      "error"
+    );
+    if (!automatic) showToast("WhatsApp send failed", error.message, "error");
+    throw error;
+  } finally {
+    els.whatsappReceipt.disabled = false;
+    if (els.whatsappReceipt.textContent === "Sending...") {
+      els.whatsappReceipt.textContent = originalText;
+    }
+  }
+}
+
 async function shareReceiptToWhatsapp(event) {
+  event.preventDefault();
+  sendCurrentReceipt().catch(() => {});
+}
+
+async function shareReceiptManually(event) {
   if (!navigator.share || !navigator.canShare) return;
   event.preventDefault();
   try {
@@ -2671,9 +2750,9 @@ async function shareReceiptToWhatsapp(event) {
       return;
     }
   } catch (error) {
-    console.warn("Receipt image sharing failed", error);
+    console.warn("Manual receipt sharing failed", error);
   }
-  window.open(els.whatsappReceipt.href, "_blank", "noopener,noreferrer");
+  window.open(els.manualWhatsappReceipt.href, "_blank", "noopener,noreferrer");
 }
 
 function openReceipt(member) {
@@ -3265,6 +3344,7 @@ els.printReceipt.addEventListener("click", () => window.print());
 els.downloadReceipt.addEventListener("click", () => window.print());
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
+els.manualWhatsappReceipt.addEventListener("click", shareReceiptManually);
 els.resetMemberForm.addEventListener("click", () => {
   window.setTimeout(() => {
     setDefaultDates();
