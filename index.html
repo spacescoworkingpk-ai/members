@@ -167,12 +167,24 @@
               <strong id="cashOpeningBalance">PKR 0</strong>
             </div>
             <div class="cash-balance">
-              <span>Amount received</span>
+              <span>Customer collections</span>
               <strong id="cashReceivedMonth">PKR 0</strong>
             </div>
+            <div class="cash-balance">
+              <span>Internal top-ups</span>
+              <strong id="cashInternalMonth">PKR 0</strong>
+            </div>
             <div class="cash-balance expense-balance">
-              <span>Staff expenses</span>
+              <span>Total staff expenses</span>
               <strong id="cashExpensesMonth">PKR 0</strong>
+            </div>
+            <div class="cash-balance expense-balance">
+              <span>Cash expenses</span>
+              <strong id="cashCashExpensesMonth">PKR 0</strong>
+            </div>
+            <div class="cash-balance expense-balance">
+              <span>Card expenses</span>
+              <strong id="cashCardExpensesMonth">PKR 0</strong>
             </div>
             <div class="cash-balance">
               <span>Petty cash in hand</span>
@@ -258,19 +270,19 @@
           </div>
           <div class="cash-summary-grid financial-grid">
             <div class="cash-balance">
-              <span>Total revenue collected</span>
+              <span>Revenue in selected month</span>
               <strong id="financeRevenue">PKR 0</strong>
             </div>
             <div class="cash-balance expense-balance">
-              <span>Owner expenses</span>
+              <span>Owner expenses in selected month</span>
               <strong id="financeOwnerExpenses">PKR 0</strong>
             </div>
             <div class="cash-balance expense-balance">
-              <span>Staff expenses</span>
+              <span>Staff expenses in selected month</span>
               <strong id="financeStaffExpenses">PKR 0</strong>
             </div>
             <div class="cash-balance">
-              <span>Net profit</span>
+              <span>Net profit in selected month</span>
               <strong id="financeNetProfit">PKR 0</strong>
             </div>
             <div class="cash-balance">
@@ -441,7 +453,7 @@
             <span class="sheet-message" id="sheetMessage">No pending edits</span>
           </div>
           <div class="sheet-wrap">
-            <table class="sheet-table">
+            <table class="sheet-table member-sheet-table">
               <thead>
                 <tr>
                   <th>Name</th>

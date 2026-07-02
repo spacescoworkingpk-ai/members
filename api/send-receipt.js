@@ -40,10 +40,11 @@ async function authenticatedStaff(token) {
   return rows[0];
 }
 
-async function findExistingMessage(token, invoiceNumber, recipientPhone) {
+async function findExistingMessage(token, invoiceNumber, recipientPhone, recipientType = "") {
   try {
+    const typeFilter = recipientType ? `&recipient_type=eq.${encodeURIComponent(recipientType)}` : "";
     const rows = await supabaseFetch(
-      `/rest/v1/whatsapp_messages?select=*&invoice_number=eq.${encodeURIComponent(invoiceNumber)}&recipient_phone=eq.${encodeURIComponent(recipientPhone)}&status=in.(queued,sent,delivered,read)&order=created_at.desc&limit=1`,
+      `/rest/v1/whatsapp_messages?select=*&invoice_number=eq.${encodeURIComponent(invoiceNumber)}&recipient_phone=eq.${encodeURIComponent(recipientPhone)}${typeFilter}&status=in.(queued,sent,delivered,read)&order=created_at.desc&limit=1`,
       token
     );
     const existing = rows?.[0] || null;
@@ -66,6 +67,11 @@ async function createMessageLog(token, row) {
     });
     return rows?.[0] || null;
   } catch (error) {
+    const message = String(error.message || "");
+    if (message.includes("duplicate key") || message.includes("whatsapp_messages_active_recipient_key")) {
+      const existing = await findExistingMessage(token, row.invoice_number, row.recipient_phone, row.recipient_type);
+      if (existing) return existing;
+    }
     throw new Error(`Could not create the WhatsApp send log. ${error.message}`);
   }
 }
@@ -106,7 +112,7 @@ async function sendToRecipient({
   fileName,
   whatsapp
 }) {
-  const existing = await findExistingMessage(token, invoiceNumber, recipientPhone);
+  const existing = await findExistingMessage(token, invoiceNumber, recipientPhone, recipientType);
   if (existing) return { ok: true, duplicate: true, messageId: existing.meta_message_id, recipientType };
 
   const log = await createMessageLog(token, {
@@ -117,6 +123,7 @@ async function sendToRecipient({
     status: "queued"
   });
   if (!log?.id) throw new Error("Could not create the WhatsApp send log.");
+  if (log.status !== "queued") return { ok: true, duplicate: true, messageId: log.meta_message_id, recipientType };
 
   try {
     const result = await sendReceiptTemplate({

@@ -174,7 +174,10 @@ const els = {
   cashBalance: document.querySelector("#cashBalance"),
   cashOpeningBalance: document.querySelector("#cashOpeningBalance"),
   cashReceivedMonth: document.querySelector("#cashReceivedMonth"),
+  cashInternalMonth: document.querySelector("#cashInternalMonth"),
   cashExpensesMonth: document.querySelector("#cashExpensesMonth"),
+  cashCashExpensesMonth: document.querySelector("#cashCashExpensesMonth"),
+  cashCardExpensesMonth: document.querySelector("#cashCardExpensesMonth"),
   cashMonth: document.querySelector("#cashMonth"),
   cashReport: document.querySelector("#cashReport"),
   expenseForm: document.querySelector("#expenseForm"),
@@ -697,6 +700,7 @@ function membershipCycle(memberOrRow, referenceDate = new Date()) {
 function paymentState(member) {
   if (member.paid) return "paid";
   const days = daysUntil(member.validTill);
+  if (days < 0) return "overdue";
   if (days <= 7) return "due";
   return "unpaid";
 }
@@ -945,7 +949,7 @@ function renderMembers() {
           <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
           <button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>
           ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
-          <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Delete</button>
+          <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
         </td>
       </tr>
     `;
@@ -1005,7 +1009,7 @@ function renderSheetEditor() {
       </td>
       <td>
         <button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button>
-        <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Delete</button>
+        <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="16">No records found.</td></tr>`;
@@ -1032,8 +1036,18 @@ function hasUnsavedSheetChanges() {
   return Boolean(els.memberSheet?.querySelector("tr.dirty"));
 }
 
+function markLedgerRowDirty(row, messageElement, defaultMessage) {
+  if (!row) return;
+  row.classList.add("dirty");
+  if (messageElement) messageElement.textContent = defaultMessage;
+}
+
+function hasUnsavedLedgerChanges() {
+  return Boolean(els.cashSheet?.querySelector("tr.dirty") || els.ownerSheet?.querySelector("tr.dirty"));
+}
+
 async function maybeRefreshData(reason = "auto") {
-  if (!session?.access_token || els.appShell.hidden || hasUnsavedSheetChanges()) return;
+  if (!session?.access_token || els.appShell.hidden || hasUnsavedSheetChanges() || hasUnsavedLedgerChanges()) return;
   const now = Date.now();
   if (reason !== "manual" && now - lastAutoRefreshAt < 60000) return;
   lastAutoRefreshAt = now;
@@ -1144,7 +1158,7 @@ async function saveChangedSheetRowsFor(id) {
 async function deleteMember(id) {
   const member = memberRecords.find((item) => item.id === id);
   if (!member) return;
-  const confirmed = window.confirm(`Delete ${member.name} from active clients? This will archive the record and keep receipt history.`);
+  const confirmed = window.confirm(`Archive ${member.name} from active clients? Receipt history will be kept.`);
   if (!confirmed) return;
   try {
     setSyncStatus("Deleting", "busy");
@@ -1249,12 +1263,15 @@ function renderReceipts() {
       ${group.members.map((member) => {
         const days = daysUntil(member.validTill);
         const dueLabel = days < 0 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue` : `${days} day${days === 1 ? "" : "s"} left`;
+        const arrearsText = member.previousUnpaidCount
+          ? ` | Older unpaid: ${member.previousUnpaidCount}${canSeeRevenue() ? ` / ${fmt.format(member.previousUnpaidAmount)}` : ""}`
+          : "";
         return `
     <article class="queue-item">
       <header>
         <div>
           <strong>${escapeHtml(member.name)}</strong>
-          <span>${escapeHtml(member.plan)} | Valid till ${formatDate(member.validTill)}</span>
+          <span>${escapeHtml(member.plan)} | Valid till ${formatDate(member.validTill)}${arrearsText}</span>
         </div>
         <div class="queue-amount">
           <strong>${moneyOrRestricted(Number(member.monthlyFee))}</strong>
@@ -1372,6 +1389,9 @@ function financialSummary(range = null) {
   const staffExpenses = scopedCashEntries
     .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const staffCardExpenses = scopedCashEntries
+    .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry) && !isCashAffectingExpense(entry))
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerCollectedRevenue = Number(sourceTotals.spaces_account || 0) + Number(sourceTotals.abrar_owner || 0);
   const ownerNonRevenueReceiving = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "receiving")
@@ -1380,7 +1400,7 @@ function financialSummary(range = null) {
   const ownerOutgoing = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "expense")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const ownerBalance = ownerCollectedRevenue + ownerNonRevenueReceiving - ownerOutgoing;
+  const ownerBalance = ownerCollectedRevenue + ownerNonRevenueReceiving - ownerOutgoing - staffCardExpenses;
   const staffBalance = scopedCashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
   const outstanding = members
     .filter((member) => !member.paid)
@@ -1392,6 +1412,7 @@ function financialSummary(range = null) {
     totalRevenue,
     ownerExpenses,
     staffExpenses,
+    staffCardExpenses,
     companyExpenses,
     ownerBalance,
     staffBalance,
@@ -1428,6 +1449,12 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
   const received = monthEntries
     .filter((entry) => entry.entry_type === "receiving")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const customerReceived = monthEntries
+    .filter((entry) => entry.entry_type === "receiving" && !isInternalTransfer(entry))
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const internalTopups = monthEntries
+    .filter((entry) => entry.entry_type === "receiving" && isInternalTransfer(entry))
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const expenses = monthEntries
     .filter((entry) => entry.entry_type === "expense" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
@@ -1445,6 +1472,8 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
     ...range,
     opening,
     received,
+    customerReceived,
+    internalTopups,
     expenses,
     cashExpenses,
     cardExpenses,
@@ -1475,7 +1504,10 @@ function renderCashAccounting() {
     els.cashBalance.textContent = "Setup needed";
     els.cashOpeningBalance.textContent = "Setup needed";
     els.cashReceivedMonth.textContent = "Setup needed";
+    if (els.cashInternalMonth) els.cashInternalMonth.textContent = "Setup needed";
     els.cashExpensesMonth.textContent = "Setup needed";
+    if (els.cashCashExpensesMonth) els.cashCashExpensesMonth.textContent = "Setup needed";
+    if (els.cashCardExpensesMonth) els.cashCardExpensesMonth.textContent = "Setup needed";
     els.cashMessage.textContent = "Run the cash ledger SQL in Supabase to enable this section.";
     els.cashSheet.innerHTML = `<tr><td colspan="8">Staff spending table is not enabled yet.</td></tr>`;
     return;
@@ -1483,8 +1515,11 @@ function renderCashAccounting() {
   const query = els.cashSearch.value.trim().toLowerCase();
   const summary = cashMonthlySummary();
   els.cashOpeningBalance.textContent = fmt.format(summary.opening);
-  els.cashReceivedMonth.textContent = fmt.format(summary.received);
+  els.cashReceivedMonth.textContent = fmt.format(summary.customerReceived);
+  if (els.cashInternalMonth) els.cashInternalMonth.textContent = fmt.format(summary.internalTopups);
   els.cashExpensesMonth.textContent = fmt.format(summary.expenses);
+  if (els.cashCashExpensesMonth) els.cashCashExpensesMonth.textContent = fmt.format(summary.cashExpenses);
+  if (els.cashCardExpensesMonth) els.cashCardExpensesMonth.textContent = fmt.format(summary.cardExpenses);
   els.cashBalance.textContent = fmt.format(summary.closing);
 
   const filtered = summary.entries.filter((entry) => {
@@ -1538,15 +1573,17 @@ function ownerEntryOptions(type, selected) {
 
 function renderOwnerLedger() {
   if (!canSeeRevenue() || !els.ownerSheet) return;
-  const summary = financialSummary();
+  const range = cashMonthRange(els.ownerMonth?.value || monthKey());
+  const summary = financialSummary(range);
+  const currentSummary = financialSummary();
   els.financeRevenue.textContent = fmt.format(summary.totalRevenue);
   els.financeOwnerExpenses.textContent = fmt.format(summary.ownerExpenses);
   els.financeStaffExpenses.textContent = fmt.format(summary.staffExpenses);
   els.financeCompanyExpenses.textContent = fmt.format(summary.companyExpenses);
   els.financeNetProfit.textContent = fmt.format(summary.netProfit);
-  els.financeOwnerBalance.textContent = fmt.format(summary.ownerBalance);
-  els.financeStaffBalance.textContent = fmt.format(summary.staffBalance);
-  els.financeOutstanding.textContent = fmt.format(summary.outstanding);
+  els.financeOwnerBalance.textContent = fmt.format(currentSummary.ownerBalance);
+  els.financeStaffBalance.textContent = fmt.format(currentSummary.staffBalance);
+  els.financeOutstanding.textContent = fmt.format(currentSummary.outstanding);
   els.financeSourceBreakdown.innerHTML = paymentSources.map((source) => `
     <div class="source-pill">
       <span>${source.label}</span>
@@ -1560,7 +1597,6 @@ function renderOwnerLedger() {
     return;
   }
 
-  const range = cashMonthRange(els.ownerMonth?.value || monthKey());
   const query = els.ownerSearch.value.trim().toLowerCase();
   const filtered = ownerEntries
     .filter((entry) => isCashEntryInMonth(entry, range))
@@ -2027,6 +2063,7 @@ function renderBars() {
 
 function stateLabel(state) {
   if (state === "paid") return "Paid";
+  if (state === "overdue") return "Overdue";
   if (state === "due") return "Due soon";
   return "Unpaid";
 }
@@ -2591,24 +2628,43 @@ function receiptCanvasFallbackFile() {
   ctx.fillText("PRICE", tableX + 522, tableY + 34);
   ctx.fillText("AMOUNT", tableX + 626, tableY + 34);
 
+  const fallbackLines = receipt.lines?.length ? receipt.lines : [{
+    description: receipt.description,
+    quantity: receipt.quantity,
+    unitPrice: receipt.unitPrice,
+    amount: receipt.amount
+  }];
+  const rowHeight = 72;
+  const tableBodyHeight = Math.max(110, fallbackLines.length * rowHeight);
   ctx.strokeStyle = "#d7dde1";
   ctx.lineWidth = 1;
-  ctx.strokeRect(tableX, tableY + 54, tableW, 110);
+  ctx.strokeRect(tableX, tableY + 54, tableW, tableBodyHeight);
   ctx.fillStyle = "#222222";
-  ctx.font = "700 17px Arial, sans-serif";
-  drawWrappedText(ctx, receipt.description, tableX + 22, tableY + 96, 350, 23);
-  ctx.fillText(String(receipt.quantity).padStart(2, "0"), tableX + 438, tableY + 96);
-  ctx.fillText(receipt.unitPrice.toLocaleString("en-PK"), tableX + 522, tableY + 96);
-  ctx.fillText(receipt.amount.toLocaleString("en-PK"), tableX + 632, tableY + 96);
+  ctx.font = "700 16px Arial, sans-serif";
+  fallbackLines.forEach((line, index) => {
+    const rowY = tableY + 96 + index * rowHeight;
+    if (index > 0) {
+      ctx.strokeStyle = "#edf1f3";
+      ctx.beginPath();
+      ctx.moveTo(tableX, tableY + 54 + index * rowHeight);
+      ctx.lineTo(tableX + tableW, tableY + 54 + index * rowHeight);
+      ctx.stroke();
+      ctx.fillStyle = "#222222";
+    }
+    drawWrappedText(ctx, line.description, tableX + 22, rowY, 350, 22);
+    ctx.fillText(String(line.quantity).padStart(2, "0"), tableX + 438, rowY);
+    ctx.fillText(Number(line.unitPrice || 0).toLocaleString("en-PK"), tableX + 522, rowY);
+    ctx.fillText(Number(line.amount || 0).toLocaleString("en-PK"), tableX + 632, rowY);
+  });
 
-  let noteY = tableY + 190;
+  let noteY = tableY + 94 + tableBodyHeight;
   ctx.font = "600 15px Arial, sans-serif";
   ctx.fillStyle = "#4d555a";
   receipt.noteRows.forEach((row) => {
     noteY = drawWrappedText(ctx, row, tableX + 22, noteY, 680, 22);
   });
 
-  let totalY = 760;
+  let totalY = Math.max(760, noteY + 24);
   const labelX = 530;
   const valueX = 748;
   ctx.font = "700 18px Arial, sans-serif";
@@ -2784,6 +2840,10 @@ function whatsappPhone(phone) {
   return cleaned;
 }
 
+function normalizedPhone(phone) {
+  return whatsappPhone(phone);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -2848,8 +2908,12 @@ function exportCashMonthlyReport() {
     ["Spaces Coworking Staff Spending Report"],
     ["Month", summary.key],
     ["Opening balance", summary.opening],
-    ["Amount received", summary.received],
-    ["Expenses", summary.expenses],
+    ["Customer collections", summary.customerReceived],
+    ["Internal top-ups", summary.internalTopups],
+    ["Total amount received", summary.received],
+    ["Total staff expenses", summary.expenses],
+    ["Cash expenses", summary.cashExpenses],
+    ["Card expenses", summary.cardExpenses],
     ["Petty cash in hand", summary.closing],
     [],
     ["Date", "Type", "Category / Source", "Paid Using", "Person", "Amount", "Cash Impact", "Notes"]
@@ -2879,6 +2943,7 @@ function exportOwnerMonthlyReport() {
     .slice()
     .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
   const summary = financialSummary(range);
+  const currentSummary = financialSummary();
   const rows = [
     ["Spaces Coworking Business Financial Report"],
     ["Month", range.key],
@@ -2886,9 +2951,9 @@ function exportOwnerMonthlyReport() {
     ["Owner expenses", summary.ownerExpenses],
     ["Staff expenses", summary.staffExpenses],
     ["Combined company expenses", summary.companyExpenses],
-    ["Business / owner balance", summary.ownerBalance],
-    ["Staff petty cash", summary.staffBalance],
-    ["Outstanding invoices", summary.outstanding],
+    ["Current business / owner balance", currentSummary.ownerBalance],
+    ["Current staff petty cash", currentSummary.staffBalance],
+    ["Current outstanding invoices", currentSummary.outstanding],
     ["Net profit", summary.netProfit],
     [],
     ["Revenue by source"],
@@ -3120,6 +3185,15 @@ async function generateQuickInvoice() {
 
 async function createMemberFromForm() {
   const data = new FormData(els.memberForm);
+  const incomingPhone = normalizedPhone(data.get("phone"));
+  const duplicate = memberRecords.find((member) =>
+    member.status !== "cancelled"
+    && incomingPhone
+    && normalizedPhone(member.phone) === incomingPhone
+  );
+  if (duplicate) {
+    throw new Error(`${duplicate.name} already uses this phone number. Update the existing record instead of adding a duplicate.`);
+  }
   const lines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
   const primary = lines[0];
   const totalSeats = lines.reduce((sum, line) => sum + Number(line.seats || 0), 0);
@@ -3300,6 +3374,7 @@ els.memberSheet.addEventListener("change", (event) => {
   markSheetRowDirty(row);
 });
 els.cashSheet.addEventListener("change", (event) => {
+  markLedgerRowDirty(event.target.closest("tr[data-cash-id]"), els.cashMessage, "Unsaved staff ledger row");
   if (event.target.dataset.field !== "entryType") return;
   const row = event.target.closest("tr[data-cash-id]");
   const categorySelect = row?.querySelector('[data-field="categorySource"]');
@@ -3313,12 +3388,19 @@ els.cashSheet.addEventListener("change", (event) => {
     }
   }
 });
+els.cashSheet.addEventListener("input", (event) => {
+  markLedgerRowDirty(event.target.closest("tr[data-cash-id]"), els.cashMessage, "Unsaved staff ledger row");
+});
 els.ownerSheet.addEventListener("change", (event) => {
+  markLedgerRowDirty(event.target.closest("tr[data-owner-id]"), els.ownerMessage, "Unsaved owner ledger row");
   if (event.target.dataset.field !== "entryType") return;
   const row = event.target.closest("tr[data-owner-id]");
   const categorySelect = row?.querySelector('[data-field="categorySource"]');
   if (!categorySelect) return;
   categorySelect.innerHTML = ownerEntryOptions(event.target.value, "");
+});
+els.ownerSheet.addEventListener("input", (event) => {
+  markLedgerRowDirty(event.target.closest("tr[data-owner-id]"), els.ownerMessage, "Unsaved owner ledger row");
 });
 els.saveAllSheetRows.addEventListener("click", () => {
   withControlLock(els.saveAllSheetRows, saveChangedSheetRows, {

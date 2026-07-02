@@ -986,6 +986,11 @@ td span {
   color: #755a17;
 }
 
+.status.overdue {
+  background: #f9d9dd;
+  color: #8d2632;
+}
+
 .category-label {
   display: inline-flex;
   width: max-content;
@@ -1586,12 +1591,14 @@ label textarea {
   }
 
   .member-table,
-  .cash-table {
+  .cash-table,
+  .member-sheet-table {
     min-width: 0;
   }
 
   .member-table thead,
-  .cash-table thead {
+  .cash-table thead,
+  .member-sheet-table thead {
     display: none;
   }
 
@@ -1602,13 +1609,18 @@ label textarea {
   .cash-table,
   .cash-table tbody,
   .cash-table tr,
-  .cash-table td {
+  .cash-table td,
+  .member-sheet-table,
+  .member-sheet-table tbody,
+  .member-sheet-table tr,
+  .member-sheet-table td {
     display: block;
     width: 100%;
   }
 
   .member-table tr,
-  .cash-table tr {
+  .cash-table tr,
+  .member-sheet-table tr {
     margin-bottom: 10px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1617,7 +1629,8 @@ label textarea {
   }
 
   .member-table td,
-  .cash-table td {
+  .cash-table td,
+  .member-sheet-table td {
     display: grid;
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 10px;
@@ -1627,7 +1640,8 @@ label textarea {
   }
 
   .member-table td::before,
-  .cash-table td::before {
+  .cash-table td::before,
+  .member-sheet-table td::before {
     color: var(--muted);
     font-size: 11px;
     font-weight: 900;
@@ -1698,6 +1712,70 @@ label textarea {
     content: "Save";
   }
 
+  .member-sheet-table td:nth-child(1)::before {
+    content: "Name";
+  }
+
+  .member-sheet-table td:nth-child(2)::before {
+    content: "Company";
+  }
+
+  .member-sheet-table td:nth-child(3)::before {
+    content: "Phone";
+  }
+
+  .member-sheet-table td:nth-child(4)::before {
+    content: "Email";
+  }
+
+  .member-sheet-table td:nth-child(5)::before {
+    content: "Plan";
+  }
+
+  .member-sheet-table td:nth-child(6)::before {
+    content: "Bundle";
+  }
+
+  .member-sheet-table td:nth-child(7)::before {
+    content: "Seats";
+  }
+
+  .member-sheet-table td:nth-child(8)::before {
+    content: "Joining";
+  }
+
+  .member-sheet-table td:nth-child(9)::before {
+    content: "Renewal";
+  }
+
+  .member-sheet-table td:nth-child(10)::before {
+    content: "Standard";
+  }
+
+  .member-sheet-table td:nth-child(11)::before {
+    content: "Monthly";
+  }
+
+  .member-sheet-table td:nth-child(12)::before {
+    content: "Deposit";
+  }
+
+  .member-sheet-table td:nth-child(13)::before {
+    content: "Discount";
+  }
+
+  .member-sheet-table td:nth-child(14)::before {
+    content: "Notes";
+  }
+
+  .member-sheet-table td:nth-child(15)::before {
+    content: "Status";
+  }
+
+  .member-sheet-table td:nth-child(16)::before {
+    content: "Save";
+  }
+
   .owner-table td:nth-child(3)::before {
     content: "Category";
   }
@@ -1751,7 +1829,8 @@ label textarea {
   }
 
   .member-table td:last-child,
-  .cash-table td:last-child {
+  .cash-table td:last-child,
+  .member-sheet-table td:last-child {
     border-bottom: 0;
   }
 
@@ -1772,7 +1851,8 @@ label textarea {
   }
 
   .member-table td:last-child .tiny-button,
-  .cash-table td:last-child .tiny-button {
+  .cash-table td:last-child .tiny-button,
+  .member-sheet-table td:last-child .tiny-button {
     margin: 4px 0;
   }
 

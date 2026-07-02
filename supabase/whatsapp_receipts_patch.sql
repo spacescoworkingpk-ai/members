@@ -26,6 +26,10 @@ where meta_message_id is not null;
 create index if not exists whatsapp_messages_invoice_number_idx
 on public.whatsapp_messages (invoice_number, created_at desc);
 
+create unique index if not exists whatsapp_messages_active_recipient_key
+on public.whatsapp_messages (invoice_number, recipient_type, recipient_phone)
+where status in ('queued', 'sent', 'delivered', 'read');
+
 alter table public.whatsapp_messages enable row level security;
 
 drop policy if exists "Staff can read WhatsApp messages" on public.whatsapp_messages;
