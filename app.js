@@ -2191,7 +2191,7 @@ async function markPaid(id, control = null) {
     await loadData();
     const updatedMember = members.find((item) => item.id === id) || member;
     openInvoice(updatedMember, { mode: "receipt", invoiceId: invoiceNumber });
-    await sendCurrentReceipt({ automatic: true }).catch(() => null);
+    setReceiptSendStatus("Payment saved. Tap Share PDF to send the receipt through WhatsApp.", "success");
   }, {
     busyText: "Saving...",
     successTitle: "Receipt marked paid",
@@ -2280,7 +2280,7 @@ function openInvoice(member, override = {}) {
   const standardCell = standardPrice.toLocaleString("en-PK");
   currentReceiptShare = {
     message,
-    fileName: `${invoiceId.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-spaces-receipt.png`,
+    fileName: `${invoiceId.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-spaces-receipt.pdf`,
     memberId: member.id || null,
     receipt: {
       invoiceId,
@@ -2403,7 +2403,7 @@ function openInvoice(member, override = {}) {
   els.manualWhatsappReceipt.href = `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`;
   els.manualWhatsappReceipt.hidden = true;
   setReceiptSendStatus("");
-  els.whatsappReceipt.textContent = "Send WhatsApp PDF";
+  els.whatsappReceipt.textContent = "Share PDF";
   els.receiptDialog.showModal();
 }
 
@@ -2727,61 +2727,70 @@ function setReceiptSendStatus(message, type = "") {
   els.receiptSendStatus.className = `receipt-send-status${type ? ` ${type}` : ""}`;
 }
 
-async function sendCurrentReceipt({ automatic = false } = {}) {
+async function receiptPdfFile() {
+  if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
+  const response = await fetch("/api/receipt-pdf", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session?.access_token || ""}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      fileName: currentReceiptShare.fileName,
+      receipt: currentReceiptShare.receipt
+    })
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || "Could not create the receipt PDF.");
+  }
+  const blob = await response.blob();
+  return new File([blob], currentReceiptShare.fileName, { type: "application/pdf" });
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function sendCurrentReceipt() {
   if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
   const originalText = els.whatsappReceipt.textContent;
   els.whatsappReceipt.disabled = true;
-  els.whatsappReceipt.textContent = "Sending...";
-  setReceiptSendStatus(
-    automatic ? "Payment saved. Sending the PDF receipt automatically..." : "Sending the PDF receipt...",
-    "busy"
-  );
+  els.whatsappReceipt.textContent = "Preparing...";
+  setReceiptSendStatus("Preparing the PDF receipt...", "busy");
 
   try {
-    const response = await fetch("/api/send-receipt", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session?.access_token || ""}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        memberId: currentReceiptShare.memberId,
-        phone: currentReceiptShare.receipt.phone,
-        fileName: currentReceiptShare.fileName.replace(/\.png$/i, ".pdf"),
-        receipt: currentReceiptShare.receipt,
-        sendStaffCopy: true
-      })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(payload.error || "Could not send the WhatsApp receipt.");
-      error.code = payload.code;
-      throw error;
+    const file = await receiptPdfFile();
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({
+        title: "Spaces Coworking receipt",
+        text: currentReceiptShare.message,
+        files: [file]
+      });
+      setReceiptSendStatus("PDF ready. Choose WhatsApp in the share sheet and select the customer chat.", "success");
+      showToast("PDF ready to share", "Choose WhatsApp and send the attached receipt.");
+      return { ok: true, shared: true };
     }
-    const copyText = payload.staffCopy?.ok
-      ? " A copy was also sent to this staff account's WhatsApp number."
-      : payload.staffCopy?.error
-        ? ` The customer copy was sent, but the staff copy failed: ${payload.staffCopy.error}`
-        : " Customer receipt sent. No staff copy number is configured for this login.";
-    setReceiptSendStatus(`PDF receipt sent to ${currentReceiptShare.receipt.customerName}.${copyText}`, "success");
-    els.whatsappReceipt.textContent = "Send again";
-    showToast("WhatsApp receipt sent", `${currentReceiptShare.receipt.customerName} received the PDF.`);
-    return payload;
-  } catch (error) {
-    console.warn("Automatic WhatsApp receipt failed", error);
+
+    downloadFile(file);
     els.manualWhatsappReceipt.hidden = false;
-    const setupNeeded = error.code === "WHATSAPP_SETUP_NEEDED";
-    setReceiptSendStatus(
-      setupNeeded
-        ? "Payment is saved. Meta/Vercel setup is still required; use Open WhatsApp for now."
-        : `Payment is saved, but WhatsApp sending failed: ${error.message}`,
-      "error"
-    );
-    if (!automatic) showToast("WhatsApp send failed", error.message, "error");
+    setReceiptSendStatus("PDF downloaded. Use Open WhatsApp for the message, then attach the downloaded PDF if needed.", "success");
+    showToast("PDF downloaded", "Attach the downloaded receipt in WhatsApp.");
+    return { ok: true, downloaded: true };
+  } catch (error) {
+    console.warn("Receipt PDF share failed", error);
+    els.manualWhatsappReceipt.hidden = false;
+    setReceiptSendStatus(`Could not prepare the PDF: ${error.message}`, "error");
+    showToast("PDF share failed", error.message, "error");
     throw error;
   } finally {
     els.whatsappReceipt.disabled = false;
-    if (els.whatsappReceipt.textContent === "Sending...") {
+    if (els.whatsappReceipt.textContent === "Preparing...") {
       els.whatsappReceipt.textContent = originalText;
     }
   }
@@ -2796,7 +2805,7 @@ async function shareReceiptManually(event) {
   if (!navigator.share || !navigator.canShare) return;
   event.preventDefault();
   try {
-    const file = await receiptPreviewFile();
+    const file = await receiptPdfFile();
     if (navigator.canShare({ files: [file] })) {
       await navigator.share({
         title: "Spaces Coworking receipt",
@@ -3423,7 +3432,15 @@ document.addEventListener("visibilitychange", () => {
 window.setInterval(() => maybeRefreshData(), 60000);
 els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
-els.downloadReceipt.addEventListener("click", () => window.print());
+els.downloadReceipt.addEventListener("click", async () => {
+  try {
+    const file = await receiptPdfFile();
+    downloadFile(file);
+    showToast("PDF saved", "Receipt PDF downloaded.");
+  } catch (error) {
+    showToast("Could not save PDF", error.message, "error");
+  }
+});
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
 els.manualWhatsappReceipt.addEventListener("click", shareReceiptManually);
