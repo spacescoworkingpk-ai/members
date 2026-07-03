@@ -113,7 +113,7 @@ let lastAutoRefreshAt = 0;
 let memberFormPlanLines = [];
 let currentReceiptShare = {
   message: "",
-  fileName: "spaces-receipt.png",
+  fileName: "spaces-receipt.pdf",
   receipt: null,
   memberId: null
 };
@@ -291,7 +291,19 @@ async function supabaseRequest(path, options = {}) {
   }
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Supabase request failed: ${response.status}`);
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    const message = payload?.message || payload?.msg || payload?.error_description || text || `Supabase request failed: ${response.status}`;
+    const details = payload?.details && !String(message).includes(payload.details) ? ` ${payload.details}` : "";
+    const error = new Error(`${message}${details}`);
+    error.status = response.status;
+    error.code = payload?.code || null;
+    error.payload = payload;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -478,9 +490,9 @@ function parsePlanLines(text) {
       const [planNameRaw, seatsRaw, standardRaw, offeredRaw] = line.split("|").map((part) => part?.trim());
       const planName = planNameRaw || "";
       const plan = plans.find((item) => item.name.toLowerCase() === planName.toLowerCase());
-      const seats = Math.max(1, Number(seatsRaw || plan?.seats || 1));
-      const standardRate = Number(standardRaw || plan?.price || 0);
-      const offeredRate = Number(offeredRaw || standardRate);
+      const seats = positiveIntOr(seatsRaw || plan?.seats, 1);
+      const standardRate = nonNegativeMoney(standardRaw || plan?.price, 0);
+      const offeredRate = nonNegativeMoney(offeredRaw || standardRate, standardRate);
       return {
         planId: plan?.id || null,
         planName: plan?.name || planName,
@@ -499,9 +511,9 @@ function serializePlanLineForDb(item, memberId, index) {
     plan_id: item.planId || null,
     plan_name: item.planName,
     category: item.category || inferPlanCategory(item.planName),
-    seats: Number(item.seats || 1),
-    standard_monthly_rate: Number(item.standardRate || 0),
-    offered_monthly_rate: Number(item.offeredRate || 0),
+    seats: positiveIntOr(item.seats, 1),
+    standard_monthly_rate: nonNegativeMoney(item.standardRate, 0),
+    offered_monthly_rate: nonNegativeMoney(item.offeredRate, 0),
     sort_order: index
   };
 }
@@ -665,6 +677,20 @@ function formatDateTime(date) {
   });
 }
 
+function numberOr(value, fallback = 0) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : fallback;
+}
+
+function positiveIntOr(value, fallback = 1) {
+  const next = Math.round(numberOr(value, fallback));
+  return Math.max(1, next);
+}
+
+function nonNegativeMoney(value, fallback = 0) {
+  return Math.max(0, Math.round(numberOr(value, fallback)));
+}
+
 function daysUntil(dateString) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -790,7 +816,17 @@ function setOwnerOnlyVisibility() {
   document.querySelectorAll(".owner-only").forEach((element) => {
     element.hidden = !canSeeRevenue();
   });
-  if (!canSeeRevenue() && activePage() === "owner-ledger") {
+  ["basePlanPrice", "monthlyFee", "deposit", "discountReason"].forEach((name) => {
+    const field = els.memberForm?.elements?.[name];
+    if (!field) return;
+    field.disabled = !canSeeRevenue();
+    const label = field.closest("label");
+    if (label) label.hidden = !canSeeRevenue();
+  });
+  const rateHint = document.querySelector(".member-form-panel .form-hint");
+  if (rateHint) rateHint.hidden = !canSeeRevenue();
+  if (els.rateSummary) els.rateSummary.hidden = !canSeeRevenue();
+  if (!canAccessPage(activePage())) {
     history.replaceState(null, "", "#dashboard");
   }
 }
@@ -817,8 +853,17 @@ function activePage() {
   return pageTitles[page] ? page : "dashboard";
 }
 
+function canAccessPage(page) {
+  return canSeeRevenue() || page !== "owner-ledger";
+}
+
 function showActivePage() {
-  const page = activePage();
+  let page = activePage();
+  if (!canAccessPage(page)) {
+    history.replaceState(null, "", "#dashboard");
+    page = "dashboard";
+    showToast("Owner access required", "Business ledger is only visible to Abrar.", "error");
+  }
   document.querySelectorAll(".page-section").forEach((section) => {
     section.hidden = section.dataset.page !== page;
   });
@@ -947,7 +992,7 @@ function renderMembers() {
         <td><span class="status ${state}">${stateLabel(state)}</span></td>
         <td>
           <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
-          <button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>
+          ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>` : ""}
           ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
           <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
         </td>
@@ -1073,14 +1118,14 @@ async function saveSheetRow(id) {
     planId: selectedPlan?.id || null,
     planName: selectedPlan?.name || planSelect.selectedOptions[0]?.dataset.name || value("plan"),
     category: selectedPlan?.category || inferPlanCategory(selectedPlan?.name),
-    seats: Number(value("seats") || 1),
-    standardRate: Number(value("basePlanPrice") || selectedPlan?.price || 0),
-    offeredRate: Number(value("monthlyFee") || selectedPlan?.price || 0),
+    seats: positiveIntOr(value("seats"), 1),
+    standardRate: nonNegativeMoney(value("basePlanPrice") || selectedPlan?.price, 0),
+    offeredRate: nonNegativeMoney(value("monthlyFee") || selectedPlan?.price, 0),
     sortOrder: 0
   };
-  const totalSeats = editedPlanLines.reduce((sum, item) => sum + Number(item.seats || 0), 0) || Number(value("seats") || 1);
-  const totalStandard = editedPlanLines.reduce((sum, item) => sum + Number(item.standardRate || 0), 0);
-  const totalOffered = editedPlanLines.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
+  const totalSeats = editedPlanLines.reduce((sum, item) => sum + positiveIntOr(item.seats, 1), 0) || positiveIntOr(value("seats"), 1);
+  const totalStandard = editedPlanLines.reduce((sum, item) => sum + nonNegativeMoney(item.standardRate, 0), 0);
+  const totalOffered = editedPlanLines.reduce((sum, item) => sum + nonNegativeMoney(item.offeredRate, 0), 0);
 
   const changes = {
     full_name: value("name"),
@@ -1096,14 +1141,14 @@ async function saveSheetRow(id) {
     status: value("status") || "active"
   };
   if (canSeeRevenue()) {
-    changes.standard_monthly_rate = totalStandard || Number(value("basePlanPrice") || 0);
-    changes.offered_monthly_rate = totalOffered || Number(value("monthlyFee") || 0);
-    changes.deposit_amount = Number(value("deposit") || 0);
+    changes.standard_monthly_rate = totalStandard || nonNegativeMoney(value("basePlanPrice"), 0);
+    changes.offered_monthly_rate = totalOffered || nonNegativeMoney(value("monthlyFee"), 0);
+    changes.deposit_amount = nonNegativeMoney(value("deposit"), 0);
     changes.discount_reason = value("discountReason") || null;
   } else if (existingMember) {
-    changes.standard_monthly_rate = Number(existingMember.basePlanPrice || 0);
-    changes.offered_monthly_rate = Number(existingMember.monthlyFee || 0);
-    changes.deposit_amount = Number(existingMember.deposit || 0);
+    changes.standard_monthly_rate = nonNegativeMoney(existingMember.basePlanPrice, 0);
+    changes.offered_monthly_rate = nonNegativeMoney(existingMember.monthlyFee, 0);
+    changes.deposit_amount = nonNegativeMoney(existingMember.deposit, 0);
     changes.discount_reason = existingMember.discountReason || null;
   }
   await patchRow("members", id, changes);
@@ -1133,7 +1178,6 @@ async function saveChangedSheetRows() {
     await loadData();
     updateSheetMessage("Saved");
   } catch (error) {
-    alert(`Could not save sheet changes: ${error.message}`);
     setSyncStatus("Error", "error");
     updateSheetMessage("Save failed");
     throw error;
@@ -1148,7 +1192,6 @@ async function saveChangedSheetRowsFor(id) {
     await loadData();
     updateSheetMessage("Saved");
   } catch (error) {
-    alert(`Could not save member row: ${error.message}`);
     setSyncStatus("Error", "error");
     updateSheetMessage("Save failed");
     throw error;
@@ -1167,7 +1210,7 @@ async function deleteMember(id) {
     await loadData();
     showToast("Client archived", `${member.name} was removed from active clients.`);
   } catch (error) {
-    alert(`Could not delete client: ${error.message}`);
+    showToast("Could not archive client", error.message, "error");
     setSyncStatus("Error", "error");
   }
 }
@@ -1175,6 +1218,7 @@ async function deleteMember(id) {
 async function createCashEntryFromForm(form, entryType) {
   const data = new FormData(form);
   const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
+  const amount = nonNegativeMoney(data.get("amount"), 0);
   const isInternal = isInternalTransfer({
     entry_type: entryType,
     category: entryType === "expense" ? categoryOrSource : null,
@@ -1186,7 +1230,7 @@ async function createCashEntryFromForm(form, entryType) {
     category: entryType === "expense" ? categoryOrSource : null,
     source: entryType === "receiving" ? categoryOrSource : null,
     person_name: data.get("personName") || null,
-    amount: Number(data.get("amount") || 0),
+    amount,
     notes: data.get("notes") || null,
     payment_method: entryType === "expense" ? data.get("paymentMethod") || "petty_cash" : null,
     payment_source: data.get("paymentSource") || (entryType === "receiving" ? "staff" : null),
@@ -1194,7 +1238,7 @@ async function createCashEntryFromForm(form, entryType) {
   });
   await recordAudit(`create_staff_${entryType}`, "cash_ledger", row.id, {
     category_or_source: categoryOrSource,
-    amount: Number(data.get("amount") || 0),
+    amount,
     payment_method: data.get("paymentMethod") || null,
     payment_source: data.get("paymentSource") || null
   });
@@ -1202,17 +1246,24 @@ async function createCashEntryFromForm(form, entryType) {
 
 async function replaceMemberPlanItems(memberId, items) {
   if (!memberPlanItemsReady) return;
+  const existingIds = memberPlanItems
+    .filter((item) => item.member_id === memberId || item.memberId === memberId)
+    .map((item) => item.id)
+    .filter(Boolean);
   try {
-    await deleteRows("member_plan_items", `member_id=eq.${encodeURIComponent(memberId)}`);
-    if (!items.length) return;
-    await supabaseRequest("/rest/v1/member_plan_items", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: items.map((item, index) => serializePlanLineForDb(item, memberId, index))
-    });
+    if (items.length) {
+      await supabaseRequest("/rest/v1/member_plan_items", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: items.map((item, index) => serializePlanLineForDb(item, memberId, index))
+      });
+    }
+    if (existingIds.length) {
+      await deleteRows("member_plan_items", `id=in.(${existingIds.map(encodeURIComponent).join(",")})`);
+    }
   } catch (error) {
     memberPlanItemsReady = false;
-    console.warn("Could not save member plan bundle lines", error);
+    throw new Error(`Could not save member plan bundle lines: ${error.message}`);
   }
 }
 
@@ -1229,7 +1280,7 @@ async function saveCashRow(id) {
     category: entryType === "expense" ? categorySource : null,
     source: entryType === "receiving" ? categorySource : null,
     person_name: value("personName") || null,
-    amount: Number(value("amount") || 0),
+    amount: nonNegativeMoney(value("amount"), 0),
     notes: value("notes") || null,
     payment_method: entryType === "expense" ? value("paymentMethod") || "petty_cash" : null
   };
@@ -1281,7 +1332,7 @@ function renderReceipts() {
       <div class="queue-actions">
         <button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>
         <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Preview receipt</button>
-        <button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edited invoice</button>
+        ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edited invoice</button>` : ""}
       </div>
     </article>
         `;
@@ -1395,7 +1446,7 @@ function financialSummary(range = null) {
   const ownerCollectedRevenue = Number(sourceTotals.spaces_account || 0) + Number(sourceTotals.abrar_owner || 0);
   const ownerNonRevenueReceiving = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "receiving")
-    .filter((entry) => !isQuickRevenueEntry(entry) && entry.source !== "Membership receipt")
+    .filter((entry) => !isQuickRevenueEntry(entry) && String(entry.source || "").toLowerCase() !== "membership receipt")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerOutgoing = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "expense")
@@ -1695,14 +1746,7 @@ async function insertPaymentRow(row) {
     return true;
   } catch (error) {
     if (!String(error.message || "").includes("payment_source")) throw error;
-    const { payment_source: _paymentSource, ...legacyRow } = row;
-    console.warn("payments.payment_source unavailable; saving payment without source", error);
-    await supabaseRequest("/rest/v1/payments", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: legacyRow
-    });
-    return true;
+    throw new Error("The payments table is missing payment_source. Run the latest Supabase schema patch before recording paid receipts.");
   }
 }
 
@@ -1740,6 +1784,7 @@ async function createOwnerEntryFromForm(form, entryType) {
   const data = new FormData(form);
   const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
   const transferId = crypto.randomUUID();
+  const amount = nonNegativeMoney(data.get("amount"), 0);
   const isTransferToStaff = entryType === "expense" && ["Transfer to Staff", "Petty Cash Top-Up"].includes(categoryOrSource);
   const isReceivedFromStaff = entryType === "receiving" && categoryOrSource === "Received From Staff";
   const ownerRow = await insertOwnerLedgerEntry({
@@ -1748,7 +1793,7 @@ async function createOwnerEntryFromForm(form, entryType) {
     category: entryType === "expense" ? categoryOrSource : null,
     source: entryType === "receiving" ? categoryOrSource : null,
     payment_source: data.get("paymentSource"),
-    amount: Number(data.get("amount") || 0),
+    amount,
     notes: data.get("notes") || null,
     attachment_note: data.get("attachment") || null,
     is_internal_transfer: isTransferToStaff || isReceivedFromStaff,
@@ -1756,7 +1801,7 @@ async function createOwnerEntryFromForm(form, entryType) {
   });
   await recordAudit(`create_owner_${entryType}`, "owner_ledger", ownerRow.id, {
     category_or_source: categoryOrSource,
-    amount: Number(data.get("amount") || 0),
+    amount,
     payment_source: data.get("paymentSource"),
     internal_transfer: isTransferToStaff || isReceivedFromStaff
   });
@@ -1768,7 +1813,7 @@ async function createOwnerEntryFromForm(form, entryType) {
       category: null,
       source: "Petty Cash Top-Up - Abrar",
       person_name: "Abrar",
-      amount: Number(data.get("amount") || 0),
+      amount,
       notes: data.get("notes") || null,
       payment_source: "staff",
       is_internal_transfer: true,
@@ -1778,7 +1823,7 @@ async function createOwnerEntryFromForm(form, entryType) {
     await patchRow("owner_ledger", ownerRow.id, { linked_cash_ledger_id: cashRow.id });
     await recordAudit("link_owner_to_staff_transfer", "cash_ledger", cashRow.id, {
       owner_ledger_id: ownerRow.id,
-      amount: Number(data.get("amount") || 0)
+      amount
     });
   }
 
@@ -1789,7 +1834,7 @@ async function createOwnerEntryFromForm(form, entryType) {
       category: "Returned to Owner",
       source: null,
       person_name: "Abrar",
-      amount: Number(data.get("amount") || 0),
+      amount,
       notes: data.get("notes") || null,
       payment_source: "staff",
       is_internal_transfer: true,
@@ -1799,7 +1844,7 @@ async function createOwnerEntryFromForm(form, entryType) {
     await patchRow("owner_ledger", ownerRow.id, { linked_cash_ledger_id: cashRow.id });
     await recordAudit("link_staff_to_owner_transfer", "cash_ledger", cashRow.id, {
       owner_ledger_id: ownerRow.id,
-      amount: Number(data.get("amount") || 0)
+      amount
     });
   }
 }
@@ -1817,7 +1862,7 @@ async function saveOwnerRow(id) {
     category: entryType === "expense" ? categorySource : null,
     source: entryType === "receiving" ? categorySource : null,
     payment_source: value("paymentSource"),
-    amount: Number(value("amount") || 0),
+    amount: nonNegativeMoney(value("amount"), 0),
     notes: value("notes") || null,
     attachment_note: value("attachment") || null,
     is_internal_transfer: isInternalTransfer({ entry_type: entryType, category: entryType === "expense" ? categorySource : null, source: entryType === "receiving" ? categorySource : null })
@@ -1988,9 +2033,9 @@ function selectedPlanLineFromMainForm() {
     planId: selected?.dataset.id || null,
     planName: selected?.value || "",
     category: plans.find((plan) => plan.id === selected?.dataset.id)?.category || inferPlanCategory(selected?.value),
-    seats: Number(els.memberForm.elements.seats.value || selected?.dataset.seats || 1),
-    standardRate: Number(els.memberForm.elements.basePlanPrice.value || selected?.dataset.price || 0),
-    offeredRate: Number(els.memberForm.elements.monthlyFee.value || selected?.dataset.price || 0),
+    seats: positiveIntOr(els.memberForm.elements.seats.value || selected?.dataset.seats, 1),
+    standardRate: nonNegativeMoney(els.memberForm.elements.basePlanPrice.value || selected?.dataset.price, 0),
+    offeredRate: nonNegativeMoney(els.memberForm.elements.monthlyFee.value || selected?.dataset.price, 0),
     sortOrder: 0
   };
 }
@@ -1998,9 +2043,9 @@ function selectedPlanLineFromMainForm() {
 function syncMainFormFromPlanLines() {
   if (!memberFormPlanLines.length) return;
   const primary = memberFormPlanLines[0];
-  const totalSeats = memberFormPlanLines.reduce((sum, line) => sum + Number(line.seats || 0), 0);
-  const totalStandard = memberFormPlanLines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0);
-  const totalOffered = memberFormPlanLines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0);
+  const totalSeats = memberFormPlanLines.reduce((sum, line) => sum + positiveIntOr(line.seats, 1), 0);
+  const totalStandard = memberFormPlanLines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
+  const totalOffered = memberFormPlanLines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
   els.planSelect.value = primary.planName;
   els.memberForm.elements.seats.value = totalSeats;
   els.memberForm.elements.basePlanPrice.value = totalStandard;
@@ -2014,9 +2059,9 @@ function renderMemberPlanLines() {
       <label>Plan
         <select data-field="bundlePlan">${planOptionHtml(line.planName)}</select>
       </label>
-      <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${Number(line.seats || 1)}"></label>
-      <label>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${Number(line.standardRate || 0)}"></label>
-      <label>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${Number(line.offeredRate || 0)}"></label>
+      <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${positiveIntOr(line.seats, 1)}"></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
       <button class="ghost-button plan-line-remove" data-action="remove-plan-line" data-index="${index}" type="button" aria-label="Remove plan line">x</button>
     </div>
   `).join("");
@@ -2032,15 +2077,15 @@ function updateMemberFormPlanLine(index, field, value) {
     line.planId = plan?.id || null;
     line.planName = plan?.name || value;
     line.category = plan?.category || inferPlanCategory(value);
-    line.seats = Number(plan?.seats || line.seats || 1);
-    line.standardRate = Number(plan?.price || line.standardRate || 0);
-    line.offeredRate = Number(plan?.price || line.offeredRate || 0);
+    line.seats = positiveIntOr(plan?.seats || line.seats, 1);
+    line.standardRate = nonNegativeMoney(plan?.price || line.standardRate, 0);
+    line.offeredRate = nonNegativeMoney(plan?.price || line.offeredRate, 0);
     renderMemberPlanLines();
     return;
   }
-  if (field === "bundleSeats") line.seats = Math.max(1, Number(value || 1));
-  if (field === "bundleStandard") line.standardRate = Number(value || 0);
-  if (field === "bundleOffered") line.offeredRate = Number(value || 0);
+  if (field === "bundleSeats") line.seats = positiveIntOr(value, 1);
+  if (field === "bundleStandard") line.standardRate = nonNegativeMoney(value, 0);
+  if (field === "bundleOffered") line.offeredRate = nonNegativeMoney(value, 0);
   syncMainFormFromPlanLines();
   renderRateSummary();
 }
@@ -2069,8 +2114,10 @@ function stateLabel(state) {
 }
 
 function billingStandardForMember(member) {
-  if (isRoomMember(member)) return Number(member.seats || 0) * roomSeatRate;
-  return Number(member.basePlanPrice || member.monthlyFee || 0);
+  const planStandard = (member.planItems || []).reduce((sum, item) => sum + nonNegativeMoney(item.standardRate, 0), 0);
+  if (planStandard) return planStandard;
+  if (isRoomMember(member)) return positiveIntOr(member.seats, 1) * roomSeatRate;
+  return nonNegativeMoney(member.basePlanPrice || member.monthlyFee, 0);
 }
 
 function shouldShowDiscount(member, override = {}) {
@@ -2078,22 +2125,22 @@ function shouldShowDiscount(member, override = {}) {
 }
 
 function invoicePricing(member, override = {}) {
-  const amount = Number(override.amount ?? member.monthlyFee);
-  const tax = Number(override.tax ?? 0);
-  const quantity = Math.max(1, Number(override.seats ?? member.seats ?? 1));
+  const amount = nonNegativeMoney(override.amount ?? member.monthlyFee, 0);
+  const tax = nonNegativeMoney(override.tax ?? 0, 0);
+  const quantity = positiveIntOr(override.seats ?? member.seats, 1);
   const showDiscount = shouldShowDiscount(member, override);
   const standardPrice = showDiscount
-    ? Number(override.standardPrice ?? billingStandardForMember(member) ?? amount)
+    ? nonNegativeMoney(override.standardPrice ?? billingStandardForMember(member) ?? amount, amount)
     : amount;
   const discount = showDiscount ? Math.max(0, standardPrice - amount) : 0;
-  const unitPrice = Number(override.unitPrice ?? Math.round(standardPrice / quantity));
+  const unitPrice = nonNegativeMoney(override.unitPrice ?? Math.round(standardPrice / quantity), 0);
   return { amount, tax, total: amount + tax, standardPrice, unitPrice, discount };
 }
 
 function invoiceLines(member, override = {}) {
   if (override.lines?.length) return override.lines;
   if (override.mode === "quick" || override.mode === "edited" || override.description) {
-    const quantity = Math.max(1, Number(override.seats ?? member.seats ?? 1));
+    const quantity = positiveIntOr(override.seats ?? member.seats, 1);
     const { amount, unitPrice } = invoicePricing(member, override);
     return [{
       description: override.description || member.plan,
@@ -2104,10 +2151,10 @@ function invoiceLines(member, override = {}) {
   }
   return (member.planItems || []).map((item) => ({
     description: item.planName,
-    quantity: Number(item.seats || 1),
-    unitPrice: Math.round(Number(item.offeredRate || 0) / Math.max(1, Number(item.seats || 1))),
-    amount: Number(item.offeredRate || 0),
-    standardAmount: Number(item.standardRate || 0)
+    quantity: positiveIntOr(item.seats, 1),
+    unitPrice: Math.round(nonNegativeMoney(item.offeredRate, 0) / positiveIntOr(item.seats, 1)),
+    amount: nonNegativeMoney(item.offeredRate, 0),
+    standardAmount: nonNegativeMoney(item.standardRate, 0)
   }));
 }
 
@@ -2140,7 +2187,7 @@ async function recordCollectedAmount({ amount, paymentSource, entryDate, source,
     category: null,
     source,
     person_name: personName || null,
-    amount: Number(amount || 0),
+    amount: nonNegativeMoney(amount, 0),
     notes: notes || null,
     payment_source: paymentSource,
     is_internal_transfer: false
@@ -2171,6 +2218,114 @@ async function recordCollectedAmount({ amount, paymentSource, entryDate, source,
   }
 }
 
+function isMissingRpcError(error, name) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.payload?.message,
+    error?.payload?.details
+  ].filter(Boolean).join(" ");
+  return text.includes("PGRST202")
+    || text.includes(`function public.${name}`)
+    || text.includes(`/${name}`)
+    || text.includes(`rpc/${name}`);
+}
+
+async function requireCashCollectedLedger({ amount, paymentSource, entryDate, source, personName, notes }) {
+  if (!["raza_manager", "staff"].includes(paymentSource)) return;
+  await recordCollectedAmount({ amount, paymentSource, entryDate, source, personName, notes });
+}
+
+async function findPaidInvoiceForCycle(member) {
+  const rows = await selectRows(
+    "invoices",
+    `select=id,invoice_number,member_id,status,valid_till&member_id=eq.${encodeURIComponent(member.id)}&status=eq.paid&valid_till=eq.${encodeURIComponent(member.validTill)}&limit=1`
+  );
+  return rows[0] || null;
+}
+
+async function recordMembershipPaymentFallback(member, paymentSource) {
+  const localExistingPaid = invoices.find((invoice) =>
+    invoice.member_id === member.id
+    && invoice.status === "paid"
+    && invoice.valid_till === member.validTill
+  );
+  const existingPaid = localExistingPaid || await findPaidInvoiceForCycle(member);
+  if (existingPaid) {
+    return { invoice_number: existingPaid.invoice_number, invoice_id: existingPaid.id, reused: true };
+  }
+
+  const { amount, tax, total, standardPrice, discount } = invoicePricing(member);
+  const invoiceNumber = `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}-${String(member.validTill || isoToday()).replaceAll("-", "")}`;
+  const sameNumberRows = await selectRows("invoices", `select=id,invoice_number,status&invoice_number=eq.${encodeURIComponent(invoiceNumber)}&limit=1`);
+  if (sameNumberRows[0]?.status === "paid") {
+    return { invoice_number: sameNumberRows[0].invoice_number, invoice_id: sameNumberRows[0].id, reused: true };
+  }
+  if (sameNumberRows[0]) {
+    await deleteRows("invoices", `id=eq.${encodeURIComponent(sameNumberRows[0].id)}`);
+  }
+  const invoice = await insertRow("invoices", {
+    invoice_number: invoiceNumber,
+    member_id: member.id,
+    invoice_type: "membership",
+    issue_date: member.membershipFrom || isoToday(),
+    valid_till: member.validTill || member.renewalDate,
+    standard_amount: standardPrice,
+    discount_amount: discount,
+    subtotal_amount: amount,
+    tax_amount: tax,
+    total_amount: total,
+    status: "sent",
+    edit_note: null
+  });
+  try {
+    const lines = invoiceLines(member);
+    await supabaseRequest("/rest/v1/invoice_items", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: lines.map((line) => ({
+        invoice_id: invoice.id,
+        description: line.description,
+        quantity: positiveIntOr(line.quantity, 1),
+        unit_price: nonNegativeMoney(line.unitPrice, 0),
+        amount: nonNegativeMoney(line.amount, 0)
+      }))
+    });
+    await insertPaymentRow({
+      invoice_id: invoice.id,
+      member_id: member.id,
+      amount: total,
+      payment_method: "cash",
+      payment_source: paymentSource,
+      reference: invoiceNumber,
+      notes: member.plan
+    });
+    await requireCashCollectedLedger({
+      amount: total,
+      paymentSource,
+      entryDate: member.membershipFrom || isoToday(),
+      source: "Membership receipt",
+      personName: member.name,
+      notes: `${invoiceNumber} | ${member.plan}`
+    });
+    await patchRow("invoices", invoice.id, { status: "paid" });
+    await recordAudit("record_membership_payment_fallback", "payments", invoice.id, {
+      invoice_number: invoiceNumber,
+      member_id: member.id,
+      member_name: member.name,
+      amount: total,
+      payment_source: paymentSource,
+      valid_till: member.validTill
+    });
+  } catch (error) {
+    await deleteRows("invoices", `id=eq.${encodeURIComponent(invoice.id)}`).catch((cleanupError) => {
+      console.warn("Could not clean up partial fallback invoice", cleanupError);
+    });
+    throw error;
+  }
+  return { invoice_number: invoiceNumber, invoice_id: invoice.id };
+}
+
 async function markPaid(id, control = null) {
   const member = members.find((item) => item.id === id);
   if (!member) return;
@@ -2178,14 +2333,21 @@ async function markPaid(id, control = null) {
   if (!paymentSource) return;
   return withControlLock(control, async () => {
     setSyncStatus("Saving", "busy");
-    const receiptRows = await callRpc("record_membership_payment", {
-      p_member_id: member.id,
-      p_amount: Number(member.monthlyFee),
-      p_payment_source: paymentSource,
-      p_receipt_date: member.membershipFrom,
-      p_valid_till: member.validTill,
-      p_note: member.plan
-    });
+    let receiptRows;
+    try {
+      receiptRows = await callRpc("record_membership_payment", {
+        p_member_id: member.id,
+        p_amount: nonNegativeMoney(member.monthlyFee, 0),
+        p_payment_source: paymentSource,
+        p_receipt_date: member.membershipFrom,
+        p_valid_till: member.validTill,
+        p_note: member.plan
+      });
+    } catch (error) {
+      if (!isMissingRpcError(error, "record_membership_payment")) throw error;
+      console.warn("record_membership_payment RPC missing; using REST fallback", error);
+      receiptRows = await recordMembershipPaymentFallback(member, paymentSource);
+    }
     const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows;
     const invoiceNumber = receiptRow?.invoice_number || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
     await loadData();
@@ -2199,7 +2361,6 @@ async function markPaid(id, control = null) {
     errorTitle: "Could not mark paid",
     cooldownMs: 2400
   }).catch((error) => {
-    alert(`Could not mark paid: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 }
@@ -2228,9 +2389,9 @@ async function createInvoice(member, override = {}) {
     body: lines.map((line) => ({
       invoice_id: invoice.id,
       description: line.description,
-      quantity: Number(line.quantity || 1),
-      unit_price: Number(line.unitPrice ?? unitPrice),
-      amount: Number(line.amount || 0)
+      quantity: positiveIntOr(line.quantity, 1),
+      unit_price: nonNegativeMoney(line.unitPrice ?? unitPrice, 0),
+      amount: nonNegativeMoney(line.amount, 0)
     }))
   });
   return invoice;
@@ -2246,7 +2407,7 @@ function openInvoice(member, override = {}) {
   const issuedDateLabel = override.mode === "quick" ? "Receipt Date" : "Membership From";
   const validText = validityLabel(member, override);
   const description = override.description || member.plan;
-  const quantity = Number(override.seats ?? member.seats);
+  const quantity = positiveIntOr(override.seats ?? member.seats, 1);
   const lines = invoiceLines(member, override);
   const serviceText = lines.length > 1
     ? lines.map((line) => `${line.description}: ${line.quantity} x ${fmt.format(line.unitPrice)} = ${fmt.format(line.amount)}`).join("\n")
@@ -2825,6 +2986,10 @@ function openReceipt(member) {
 }
 
 function openEditedInvoiceForm(member) {
+  if (!canSeeRevenue()) {
+    showToast("Owner access required", "Discounted invoices can only be created by Abrar.", "error");
+    return;
+  }
   els.editInvoiceForm.reset();
   els.editInvoiceForm.elements.memberId.value = member.id;
   els.editInvoiceForm.elements.memberName.value = member.name;
@@ -3089,17 +3254,17 @@ function syncPlanFields() {
     planId: selected.dataset.id,
     planName: selected.value,
     category: plans.find((plan) => plan.id === selected.dataset.id)?.category || inferPlanCategory(selected.value),
-    seats: Number(selected.dataset.seats || 1),
-    standardRate: Number(selected.dataset.price || 0),
-    offeredRate: Number(selected.dataset.price || 0),
+    seats: positiveIntOr(selected.dataset.seats, 1),
+    standardRate: nonNegativeMoney(selected.dataset.price, 0),
+    offeredRate: nonNegativeMoney(selected.dataset.price, 0),
     sortOrder: 0
   }];
   renderMemberPlanLines();
 }
 
 function renderRateSummary() {
-  const basePrice = memberFormPlanLines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0) || Number(els.memberForm.elements.basePlanPrice.value || 0);
-  const offeredPrice = memberFormPlanLines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0) || Number(els.memberForm.elements.monthlyFee.value || 0);
+  const basePrice = memberFormPlanLines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0) || nonNegativeMoney(els.memberForm.elements.basePlanPrice.value, 0);
+  const offeredPrice = memberFormPlanLines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0) || nonNegativeMoney(els.memberForm.elements.monthlyFee.value, 0);
   const discount = Math.max(0, basePrice - offeredPrice);
   els.rateSummary.innerHTML = discount
     ? `<strong>Discounted signup:</strong> ${memberFormPlanLines.length} invoice line${memberFormPlanLines.length === 1 ? "" : "s"}, ${fmt.format(offeredPrice)} offered instead of ${fmt.format(basePrice)}. Monthly discount ${fmt.format(discount)}.`
@@ -3108,7 +3273,7 @@ function renderRateSummary() {
 
 function syncQuickInvoiceFields() {
   const service = quickServices[els.quickService.value];
-  const quantity = Math.max(1, Number(els.quickQuantity.value || 1));
+  const quantity = positiveIntOr(els.quickQuantity.value, 1);
   const total = service.rate * quantity;
   els.quickQuantityLabel.textContent = service.unitLabel;
   els.quickRate.value = service.rate;
@@ -3141,10 +3306,50 @@ function quickValidity(service, quantity) {
   };
 }
 
+async function recordQuickReceiptFallback({ receiptNumber, customer, service, quantity, amount, paymentMode, validity, note }) {
+  const row = await insertSalesReceipt({
+    receipt_number: receiptNumber,
+    customer_name: customer.name,
+    phone: customer.phone || null,
+    service_name: service.label,
+    quantity,
+    unit_rate: service.rate,
+    total_amount: amount,
+    payment_source: paymentMode,
+    receipt_date: validity.receiptDate,
+    valid_till: validity.validTill,
+    notes: note || null
+  });
+  try {
+    await requireCashCollectedLedger({
+      amount,
+      paymentSource: paymentMode,
+      entryDate: validity.receiptDate,
+      source: service.label,
+      personName: customer.name,
+      notes: [`${receiptNumber}`, note].filter(Boolean).join(" | ")
+    });
+    await recordAudit("record_quick_receipt_fallback", "sales_receipts", row.id, {
+      receipt_number: receiptNumber,
+      customer_name: customer.name,
+      service_name: service.label,
+      quantity,
+      amount,
+      payment_source: paymentMode
+    });
+  } catch (error) {
+    await deleteRows("sales_receipts", `id=eq.${encodeURIComponent(row.id)}`).catch((cleanupError) => {
+      console.warn("Could not clean up partial quick receipt", cleanupError);
+    });
+    throw error;
+  }
+  return row;
+}
+
 async function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
-  const quantity = Math.max(1, Number(data.get("quantity") || 1));
+  const quantity = positiveIntOr(data.get("quantity"), 1);
   const amount = service.rate * quantity;
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
@@ -3154,19 +3359,25 @@ async function generateQuickInvoice() {
     name: data.get("name"),
     phone: data.get("phone")
   };
-  await callRpc("record_quick_receipt", {
-    p_receipt_number: receiptNumber,
-    p_customer_name: customer.name,
-    p_phone: customer.phone,
-    p_service_name: service.label,
-    p_quantity: quantity,
-    p_unit_rate: service.rate,
-    p_total_amount: amount,
-    p_payment_source: paymentMode,
-    p_receipt_date: validity.receiptDate,
-    p_valid_till: validity.validTill,
-    p_notes: note || null
-  });
+  try {
+    await callRpc("record_quick_receipt", {
+      p_receipt_number: receiptNumber,
+      p_customer_name: customer.name,
+      p_phone: customer.phone,
+      p_service_name: service.label,
+      p_quantity: quantity,
+      p_unit_rate: service.rate,
+      p_total_amount: amount,
+      p_payment_source: paymentMode,
+      p_receipt_date: validity.receiptDate,
+      p_valid_till: validity.validTill,
+      p_notes: note || null
+    });
+  } catch (error) {
+    if (!isMissingRpcError(error, "record_quick_receipt")) throw error;
+    console.warn("record_quick_receipt RPC missing; using REST fallback", error);
+    await recordQuickReceiptFallback({ receiptNumber, customer, service, quantity, amount, paymentMode, validity, note });
+  }
   openInvoice({
     id: `quick-${Date.now()}`,
     name: customer.name,
@@ -3203,11 +3414,14 @@ async function createMemberFromForm() {
   if (duplicate) {
     throw new Error(`${duplicate.name} already uses this phone number. Update the existing record instead of adding a duplicate.`);
   }
-  const lines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
+  const rawLines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
+  const lines = canSeeRevenue()
+    ? rawLines
+    : rawLines.map((line) => ({ ...line, offeredRate: nonNegativeMoney(line.standardRate, 0) }));
   const primary = lines[0];
-  const totalSeats = lines.reduce((sum, line) => sum + Number(line.seats || 0), 0);
-  const totalStandard = lines.reduce((sum, line) => sum + Number(line.standardRate || 0), 0);
-  const totalOffered = lines.reduce((sum, line) => sum + Number(line.offeredRate || 0), 0);
+  const totalSeats = lines.reduce((sum, line) => sum + positiveIntOr(line.seats, 1), 0);
+  const totalStandard = lines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
+  const totalOffered = lines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
   const row = await insertRow("members", {
     full_name: data.get("name"),
     company: data.get("company") || null,
@@ -3220,11 +3434,18 @@ async function createMemberFromForm() {
     renewal_date: data.get("renewalDate"),
     standard_monthly_rate: totalStandard,
     offered_monthly_rate: totalOffered,
-    deposit_amount: Number(data.get("deposit") || 0),
-    discount_reason: data.get("discountReason") || null,
+    deposit_amount: canSeeRevenue() ? nonNegativeMoney(data.get("deposit"), 0) : 0,
+    discount_reason: canSeeRevenue() ? data.get("discountReason") || null : null,
     notes: data.get("notes") || null
   });
-  await replaceMemberPlanItems(row.id, lines);
+  try {
+    await replaceMemberPlanItems(row.id, lines);
+  } catch (error) {
+    await deleteRows("members", `id=eq.${encodeURIComponent(row.id)}`).catch((cleanupError) => {
+      console.warn("Could not clean up partial member", cleanupError);
+    });
+    throw error;
+  }
   await recordAudit("create_member", "members", row.id, {
     name: data.get("name"),
     phone: data.get("phone"),
@@ -3262,7 +3483,6 @@ document.addEventListener("click", (event) => {
       errorTitle: "Could not save cash row",
       cooldownMs: 1800
     }).catch((error) => {
-      alert(`Could not save cash row: ${error.message}`);
       setSyncStatus("Error", "error");
     });
     return;
@@ -3278,7 +3498,6 @@ document.addEventListener("click", (event) => {
       errorTitle: "Could not save business ledger row",
       cooldownMs: 1800
     }).catch((error) => {
-      alert(`Could not save business ledger row: ${error.message}`);
       setSyncStatus("Error", "error");
     });
     return;
@@ -3328,9 +3547,9 @@ els.addPlanLine.addEventListener("click", () => {
     planId: selected?.dataset.id || null,
     planName: selected?.value || plans[0]?.name || "",
     category: plans.find((plan) => plan.id === selected?.dataset.id)?.category || inferPlanCategory(selected?.value),
-    seats: Number(selected?.dataset.seats || 1),
-    standardRate: Number(selected?.dataset.price || 0),
-    offeredRate: Number(selected?.dataset.price || 0),
+    seats: positiveIntOr(selected?.dataset.seats, 1),
+    standardRate: nonNegativeMoney(selected?.dataset.price, 0),
+    offeredRate: nonNegativeMoney(selected?.dataset.price, 0),
     sortOrder: memberFormPlanLines.length
   });
   renderMemberPlanLines();
@@ -3347,7 +3566,7 @@ els.memberPlanLines.addEventListener("change", (event) => {
 });
 els.memberForm.elements.monthlyFee.addEventListener("input", () => {
   if (memberFormPlanLines.length === 1) {
-    memberFormPlanLines[0].offeredRate = Number(els.memberForm.elements.monthlyFee.value || 0);
+    memberFormPlanLines[0].offeredRate = nonNegativeMoney(els.memberForm.elements.monthlyFee.value, 0);
   }
   renderRateSummary();
 });
@@ -3421,7 +3640,7 @@ els.saveAllSheetRows.addEventListener("click", () => {
   });
 });
 els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
-  alert(`Could not refresh members: ${error.message}`);
+  showToast("Could not refresh members", error.message, "error");
   setSyncStatus("Error", "error");
 }));
 window.addEventListener("focus", () => maybeRefreshData());
@@ -3468,7 +3687,6 @@ els.memberForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not save member",
     cooldownMs: 2500
   }).catch((error) => {
-    alert(`Could not save member: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3489,7 +3707,6 @@ els.quickInvoiceForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not generate receipt",
     cooldownMs: 2500
   }).catch((error) => {
-    alert(`Could not generate quick receipt: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3510,7 +3727,6 @@ els.expenseForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not save expense",
     cooldownMs: 2200
   }).catch((error) => {
-    alert(`Could not save expense: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3531,7 +3747,6 @@ els.receivingForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not save receiving",
     cooldownMs: 2200
   }).catch((error) => {
-    alert(`Could not save receiving: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3552,7 +3767,6 @@ els.ownerExpenseForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not save owner expense",
     cooldownMs: 2200
   }).catch((error) => {
-    alert(`Could not save owner expense: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3573,7 +3787,6 @@ els.ownerReceivingForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not save owner receiving",
     cooldownMs: 2200
   }).catch((error) => {
-    alert(`Could not save owner receiving: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
@@ -3588,9 +3801,9 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
   const override = {
     mode: "edited",
     invoiceId: `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
-    seats: Number(data.get("seats")),
-    standardPrice: Number(data.get("standardPrice")),
-    amount: Number(data.get("invoiceAmount")),
+    seats: positiveIntOr(data.get("seats"), 1),
+    standardPrice: nonNegativeMoney(data.get("standardPrice"), 0),
+    amount: nonNegativeMoney(data.get("invoiceAmount"), 0),
     receiptDate: member.membershipFrom,
     validTill: data.get("validTill"),
     note: data.get("editNote")
@@ -3615,7 +3828,6 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
     errorTitle: "Could not create edited invoice",
     cooldownMs: 2200
   }).catch((error) => {
-    alert(`Could not create edited invoice: ${error.message}`);
     setSyncStatus("Error", "error");
   });
 });
