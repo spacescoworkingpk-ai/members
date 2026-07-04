@@ -2231,6 +2231,26 @@ function isMissingRpcError(error, name) {
     || text.includes(`rpc/${name}`);
 }
 
+function shouldUsePaymentFallback(error, name) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.payload?.message,
+    error?.payload?.details,
+    error?.payload?.hint
+  ].filter(Boolean).join(" ").toLowerCase();
+  return isMissingRpcError(error, name)
+    || text.includes("undefined_table")
+    || text.includes("undefined_column")
+    || text.includes("relation \"public.")
+    || text.includes("column ")
+    || text.includes("schema cache")
+    || text.includes("member_plan_items")
+    || text.includes("owner_ledger")
+    || text.includes("cash_ledger")
+    || text.includes("payment_source");
+}
+
 async function requireCashCollectedLedger({ amount, paymentSource, entryDate, source, personName, notes }) {
   if (!["raza_manager", "staff"].includes(paymentSource)) return;
   await recordCollectedAmount({ amount, paymentSource, entryDate, source, personName, notes });
@@ -2344,8 +2364,8 @@ async function markPaid(id, control = null) {
         p_note: member.plan
       });
     } catch (error) {
-      if (!isMissingRpcError(error, "record_membership_payment")) throw error;
-      console.warn("record_membership_payment RPC missing; using REST fallback", error);
+      if (!shouldUsePaymentFallback(error, "record_membership_payment")) throw error;
+      console.warn("record_membership_payment RPC failed; using REST fallback", error);
       receiptRows = await recordMembershipPaymentFallback(member, paymentSource);
     }
     const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows;
@@ -3374,8 +3394,8 @@ async function generateQuickInvoice() {
       p_notes: note || null
     });
   } catch (error) {
-    if (!isMissingRpcError(error, "record_quick_receipt")) throw error;
-    console.warn("record_quick_receipt RPC missing; using REST fallback", error);
+    if (!shouldUsePaymentFallback(error, "record_quick_receipt")) throw error;
+    console.warn("record_quick_receipt RPC failed; using REST fallback", error);
     await recordQuickReceiptFallback({ receiptNumber, customer, service, quantity, amount, paymentMode, validity, note });
   }
   openInvoice({
