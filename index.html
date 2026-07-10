@@ -17,6 +17,7 @@
         <label>Password<input required id="authPassword" type="password" autocomplete="current-password" placeholder="Password"></label>
         <button class="primary-button" type="submit">Sign in</button>
         <p class="auth-message" id="authMessage"></p>
+        <a href="/" style="color:#007cb5;font-size:13px;font-weight:750;text-align:center;text-decoration:none">View customer website</a>
       </form>
     </section>
 
@@ -35,6 +36,7 @@
           <a href="#receipts">Receipts</a>
           <a href="#cash-accounting">Staff Spending</a>
           <a class="owner-only" href="#owner-ledger">Business Ledger</a>
+          <a class="owner-only" href="#website-analytics">Website</a>
           <a href="#accounting">Accounting</a>
           <a href="#plans">Plans</a>
         </nav>
@@ -534,6 +536,25 @@
             <h2>Plan catalog</h2>
           </div>
           <div class="plan-list" id="planList"></div>
+        </section>
+
+        <section class="panel owner-only page-section" id="website-analytics" data-page="website-analytics">
+          <div class="section-heading row">
+            <div><p class="eyebrow">Customer website</p><h2>Visits and enquiry path</h2></div>
+            <span class="form-hint">Last 30 days. No names, phone numbers or personal visitor data are stored.</span>
+          </div>
+          <div class="cash-summary-grid website-summary">
+            <div class="cash-balance"><span>Visitors</span><strong id="webVisitors">0</strong></div>
+            <div class="cash-balance"><span>Visits this week</span><strong id="webWeekVisitors">0</strong></div>
+            <div class="cash-balance"><span>WhatsApp interest</span><strong id="webWhatsapp">0</strong></div>
+            <div class="cash-balance"><span>Directions</span><strong id="webMaps">0</strong></div>
+            <div class="cash-balance"><span>Brue clicks</span><strong id="webBrue">0</strong></div>
+          </div>
+          <div class="website-insights">
+            <div><h3>Visitor journey</h3><div id="webJourney" class="web-bars"></div></div>
+            <div><h3>Actions</h3><div id="webActions" class="web-actions"></div></div>
+          </div>
+          <p class="sheet-message" id="webAnalyticsMessage">Waiting for website traffic.</p>
         </section>
       </main>
     </div>

@@ -1,12 +1,40 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/website.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
     "api/*.js": {
       "maxDuration": 30
     }
   },
   "headers": [
+    {
+      "source": "/admin",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [

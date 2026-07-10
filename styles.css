@@ -303,6 +303,17 @@ h2 {
   color: #8a2525;
 }
 
+.website-insights { display:grid; grid-template-columns:1.35fr .65fr; gap:24px; margin-top:24px; }
+.website-insights > div { padding:20px; border:1px solid var(--line); background:#fff; }
+.website-insights h3 { margin:0 0 18px; font-size:15px; }
+.web-bars,.web-actions { display:grid; gap:12px; }
+.web-bar-head,.web-action { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; font-weight:750; }
+.web-bar-track { height:8px; margin-top:5px; background:#edf0ed; overflow:hidden; }
+.web-bar-fill { height:100%; background:var(--brand); }
+.web-bar small { color:var(--muted); }
+.web-action { padding:11px 0; border-bottom:1px solid var(--line); }
+@media (max-width:760px) { .website-insights { grid-template-columns:1fr; } }
+
 @keyframes toast-in {
   from {
     opacity: 0;

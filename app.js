@@ -102,6 +102,8 @@ let cashEntries = [];
 let ownerEntries = [];
 let salesReceipts = [];
 let auditLogs = [];
+let websiteEvents = [];
+let websiteAnalyticsReady = true;
 let salesReceiptsReady = true;
 let auditLogReady = true;
 let cashLedgerReady = true;
@@ -145,6 +147,14 @@ const els = {
   metricDue: document.querySelector("#metricDue"),
   metricPending: document.querySelector("#metricPending"),
   metricOutstanding: document.querySelector("#metricOutstanding"),
+  webVisitors: document.querySelector("#webVisitors"),
+  webWeekVisitors: document.querySelector("#webWeekVisitors"),
+  webWhatsapp: document.querySelector("#webWhatsapp"),
+  webMaps: document.querySelector("#webMaps"),
+  webBrue: document.querySelector("#webBrue"),
+  webJourney: document.querySelector("#webJourney"),
+  webActions: document.querySelector("#webActions"),
+  webAnalyticsMessage: document.querySelector("#webAnalyticsMessage"),
   membersTable: document.querySelector("#membersTable"),
   receiptQueue: document.querySelector("#receiptQueue"),
   ledger: document.querySelector("#ledger"),
@@ -392,10 +402,20 @@ async function loadData() {
       auditLogReady = false;
       console.warn("transaction_audit unavailable", error);
     }
+    try {
+      const since = new Date(Date.now() - 30 * 86400000).toISOString();
+      websiteEvents = await selectRows("website_events", `select=*&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`);
+      websiteAnalyticsReady = true;
+    } catch (error) {
+      websiteEvents = [];
+      websiteAnalyticsReady = false;
+      console.warn("website_events unavailable", error);
+    }
   } else {
     ownerEntries = [];
     auditLogs = [];
     ownerLedgerReady = false;
+    websiteEvents = [];
   }
   try {
     salesReceipts = await selectRows("sales_receipts", "select=*&order=receipt_date.desc,created_at.desc");
@@ -837,6 +857,7 @@ const pageTitles = {
   receipts: "Receipts",
   "cash-accounting": "Staff Spending",
   "owner-ledger": "Business Ledger",
+  "website-analytics": "Website",
   accounting: "Accounting",
   plans: "Plans"
 };
@@ -854,7 +875,7 @@ function activePage() {
 }
 
 function canAccessPage(page) {
-  return canSeeRevenue() || page !== "owner-ledger";
+  return canSeeRevenue() || !["owner-ledger", "website-analytics"].includes(page);
 }
 
 function showActivePage() {
@@ -924,6 +945,41 @@ function render() {
   renderCashAccounting();
   renderOwnerLedger();
   renderAuditLog();
+  renderWebsiteAnalytics();
+}
+
+function renderWebsiteAnalytics() {
+  if (!els.webVisitors || !canSeeRevenue()) return;
+  const unique = (events) => new Set(events.map((event) => event.session_id)).size;
+  const weekStart = Date.now() - 7 * 86400000;
+  const actionCount = (names) => websiteEvents.filter((event) => names.includes(event.event_name)).length;
+  els.webVisitors.textContent = unique(websiteEvents.filter((event) => event.event_name === "page_view"));
+  els.webWeekVisitors.textContent = unique(websiteEvents.filter((event) => event.event_name === "page_view" && new Date(event.created_at).getTime() >= weekStart));
+  els.webWhatsapp.textContent = actionCount(["whatsapp_visit", "plan_dedicated", "plan_personal", "plan_room", "room_visit", "meeting_booking", "visit_form_complete"]);
+  els.webMaps.textContent = actionCount(["maps"]);
+  els.webBrue.textContent = actionCount(["brue_order"]);
+
+  const journey = [
+    ["home", "Home"], ["coffee", "Brue Coffee"], ["gallery", "Spaces experience"], ["plans", "Memberships"],
+    ["amenities", "Amenities"], ["visit", "Visit invitation"], ["location", "Location"]
+  ].map(([key, label]) => ({ key, label, visitors: unique(websiteEvents.filter((event) => event.event_name === "section_view" && event.section === key)) }));
+  const maxVisitors = Math.max(1, ...journey.map((item) => item.visitors));
+  els.webJourney.innerHTML = journey.map((item, index) => {
+    const previous = index ? journey[index - 1].visitors : item.visitors;
+    const drop = previous > 0 ? Math.max(0, Math.round((1 - item.visitors / previous) * 100)) : 0;
+    return `<div class="web-bar"><div class="web-bar-head"><span>${escapeHtml(item.label)}</span><span>${item.visitors} visitor${item.visitors === 1 ? "" : "s"}</span></div><div class="web-bar-track"><div class="web-bar-fill" style="width:${Math.round(item.visitors / maxVisitors * 100)}%"></div></div>${index && drop >= 25 ? `<small>${drop}% stopped before this section</small>` : ""}</div>`;
+  }).join("");
+  const actions = [
+    ["Desk enquiries", actionCount(["plan_dedicated", "plan_personal"])],
+    ["Room enquiries", actionCount(["plan_room", "room_visit"])],
+    ["Visit plans", actionCount(["visit_form_complete"])],
+    ["Brue interest", actionCount(["brue_order", "brue_nav", "brue_footer"])],
+    ["Map opens", actionCount(["maps"])]
+  ];
+  els.webActions.innerHTML = actions.map(([label, count]) => `<div class="web-action"><span>${escapeHtml(label)}</span><strong>${count}</strong></div>`).join("");
+  els.webAnalyticsMessage.textContent = websiteAnalyticsReady
+    ? (websiteEvents.length ? `${websiteEvents.length} anonymous events recorded in the last 30 days.` : "No visits recorded yet.")
+    : "Website analytics needs the Supabase website analytics patch.";
 }
 
 function renderMetrics() {
