@@ -3,600 +3,111 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Spaces Coworking Management</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Spaces Coworking Karachi | Desks, Private Rooms & Brue Coffee</title>
+    <meta name="description" content="A comfortable coworking space in Federal B Area, Karachi, with dedicated desks, personal desks, private team rooms, meeting facilities, a cafeteria and Brue Coffee at reception.">
+    <meta name="keywords" content="coworking space Federal B Area Karachi, dedicated desk Karachi, personal desk Karachi, private office Karachi, meeting room Federal B Area, Brue Coffee Spaces">
+    <meta name="theme-color" content="#171717">
+    <meta name="robots" content="index, follow">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Spaces Coworking Karachi | Come In, Stay Awhile">
+    <meta property="og:description" content="Thoughtful desks, private rooms and genuinely good coffee in Federal B Area, Karachi.">
+    <meta property="og:image" content="https://spacespk.com/assets/spaces-interior.jpg">
+    <meta property="og:url" content="https://spacespk.com/">
+    <link rel="canonical" href="https://spacespk.com/">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" sizes="any">
+    <link rel="stylesheet" href="website.css">
+    <link rel="stylesheet" href="video.css">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CoworkingSpace","name":"Spaces Coworking","url":"https://spacespk.com/","telephone":"+92-317-3337756","email":"spaces.net.pk@gmail.com","image":"https://spacespk.com/assets/spaces-interior.jpg","priceRange":"PKR 1,500 - PKR 20,000+","address":{"@type":"PostalAddress","streetAddress":"Mezzanine Floor, C-10, Block 4, Federal B Area","addressLocality":"Karachi","addressCountry":"PK"},"amenityFeature":[{"@type":"LocationFeatureSpecification","name":"Brue Coffee at reception","value":true},{"@type":"LocationFeatureSpecification","name":"Cafeteria","value":true},{"@type":"LocationFeatureSpecification","name":"High-speed internet","value":true},{"@type":"LocationFeatureSpecification","name":"Backup power","value":true},{"@type":"LocationFeatureSpecification","name":"Meeting room","value":true}]}</script>
   </head>
   <body>
-    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
-    <section class="auth-screen" id="authScreen">
-      <form class="auth-card" id="authForm">
-        <img src="assets/spaces-logo.svg" alt="Spaces logo">
-        <p class="eyebrow">Staff login</p>
-        <h1>Spaces Coworking</h1>
-        <label>Email<input required id="authEmail" type="email" autocomplete="email" placeholder="staff@spacespk.com"></label>
-        <label>Password<input required id="authPassword" type="password" autocomplete="current-password" placeholder="Password"></label>
-        <button class="primary-button" type="submit">Sign in</button>
-        <p class="auth-message" id="authMessage"></p>
-        <a href="/" style="color:#007cb5;font-size:13px;font-weight:750;text-align:center;text-decoration:none">View customer website</a>
-      </form>
-    </section>
+    <header class="site-header" data-header>
+      <a class="logo" href="#home" aria-label="Spaces Coworking home"><img class="logo-light" src="assets/spaces-white.png" alt="Spaces Coworking"><img class="logo-dark" src="assets/spaces-colour.png" alt="" aria-hidden="true"></a>
+      <nav aria-label="Main navigation">
+        <a href="#experience">Spaces</a><a href="#plans">Memberships</a><a href="#amenities">Amenities</a><a href="#visit">Visit</a><a class="brue-nav" data-track="brue_nav" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a>
+      </nav>
+      <button class="visit-trigger header-cta" type="button" data-open-visit data-track="visit_planner">Come by for coffee</button>
+      <button class="menu-button" type="button" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
+    </header>
 
-    <div class="app-shell" id="appShell" hidden>
-      <aside class="sidebar" aria-label="Primary">
-        <div class="brand">
-          <div class="brand-mark"><img src="assets/spaces-logo.svg" alt="Spaces logo"></div>
-          <div>
-            <strong>Spaces</strong>
-            <span>Coworking</span>
-          </div>
+    <main>
+      <section class="hero" id="home" data-track-section="home">
+        <img src="assets/spaces-interior.jpg" alt="Open coworking floor at Spaces in Federal B Area, Karachi">
+        <div class="hero-shade"></div>
+        <div class="hero-inner">
+          <p class="eyebrow light">Coworking in Federal B Area, Karachi</p>
+          <h1>A better place to spend your workday.</h1>
+          <p>Thoughtful desks, private rooms and genuinely good coffee, all under one roof.</p>
+          <div class="hero-actions"><button class="button light-button" type="button" data-open-visit data-track="visit_planner">Come by for coffee</button><a href="#plans">Explore memberships <span>↓</span></a></div>
+          <small>New here? Order from Brue and spend your first few hours working from Spaces on us.</small>
         </div>
-        <nav>
-          <a href="#dashboard" class="active">Dashboard</a>
-          <a href="#members">Members</a>
-          <a href="#receipts">Receipts</a>
-          <a href="#cash-accounting">Staff Spending</a>
-          <a class="owner-only" href="#owner-ledger">Business Ledger</a>
-          <a class="owner-only" href="#website-analytics">Website</a>
-          <a href="#accounting">Accounting</a>
-          <a href="#plans">Plans</a>
-        </nav>
-        <div class="sidebar-note">
-          <span>Live mode</span>
-          <strong>Supabase database</strong>
+      </section>
+
+      <section class="brue" id="coffee" data-track-section="coffee">
+        <div class="brue-visual" aria-label="Brue Coffee at Spaces">
+          <video class="brue-video" autoplay muted loop playsinline preload="metadata" poster="assets/cubicle.jpg" aria-label="Brue Coffee at Spaces">
+            <source src="assets/brue-coffee-web.m4v" type="video/mp4">
+          </video>
+          <button class="video-toggle" type="button" aria-label="Pause Brue Coffee video">Pause</button>
+          <span class="brue-stamp">Brue Coffee<br><i>at Spaces</i></span>
         </div>
-      </aside>
-
-      <main>
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Operations console</p>
-            <h1 id="pageTitle">Dashboard</h1>
-          </div>
-          <div class="topbar-actions">
-            <span class="sync-status" id="syncStatus">Connecting</span>
-            <button class="ghost-button" id="exportCsv" type="button">Export CSV</button>
-            <button class="ghost-button" id="logoutButton" type="button">Logout</button>
-            <a class="ghost-button" href="#receipts">Quick invoice</a>
-            <a class="ghost-button" href="#cash-accounting">Staff spending</a>
-            <a class="primary-button" href="#members">Add member</a>
-          </div>
-        </header>
-
-        <section class="summary-grid page-section" id="dashboard" data-page="dashboard" aria-label="Business summary">
-          <article class="metric">
-            <span>Monthly revenue</span>
-            <strong id="metricRevenue">PKR 0</strong>
-            <small id="metricCollected">0% collected</small>
-          </article>
-          <article class="metric owner-only">
-            <span>Collected this month</span>
-            <strong id="metricCollectedMonth">PKR 0</strong>
-            <small>Paid current-cycle invoices</small>
-          </article>
-          <article class="metric owner-only">
-            <span>Pending this month</span>
-            <strong id="metricPendingMonth">PKR 0</strong>
-            <small>Current-cycle unpaid amount</small>
-          </article>
-          <article class="metric">
-            <span>Active members</span>
-            <strong id="metricMembers">0</strong>
-            <small id="metricSeats">0 seats occupied</small>
-          </article>
-          <article class="metric">
-            <span>Renewals due</span>
-            <strong id="metricDue">0</strong>
-            <small>Next 7 days</small>
-          </article>
-          <article class="metric">
-            <span>Pending invoices</span>
-            <strong id="metricPending">0</strong>
-            <small id="metricOutstanding">PKR 0 outstanding</small>
-          </article>
-        </section>
-
-        <section class="workspace-band page-section" data-page="dashboard">
-          <div class="visual-panel photo-panel">
-            <img src="assets/spaces-interior.jpg" alt="Spaces Coworking shared workspace interior">
-            <div class="photo-caption">
-              <strong>Spaces coworking floor</strong>
-              <span>Desks, private rooms, cubicles, lounge, and executive space</span>
-            </div>
-          </div>
-          <div class="insight-panel">
-            <div class="section-heading">
-              <p class="eyebrow">This month</p>
-              <h2 id="planBarsTitle">Occupancy and revenue mix</h2>
-            </div>
-            <div class="bars" id="planBars"></div>
-          </div>
-        </section>
-
-        <section class="panel member-form-panel quick-invoice-panel page-section" id="quick-invoice" data-page="receipts">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Temporary billing</p>
-              <h2>Day pass, weekly pass, and conference room receipt</h2>
-            </div>
-            <span class="form-hint">For one-time customers without adding a member record.</span>
-          </div>
-          <form id="quickInvoiceForm" class="staff-form">
-            <div class="form-grid">
-              <label>Name<input required name="name" placeholder="Customer name"></label>
-              <label>Contact number<input required name="phone" placeholder="923001234567"></label>
-              <label>Service
-                <select required name="service" id="quickService">
-                  <option value="day-pass">Day Pass</option>
-                  <option value="weekly-pass">Weekly Pass</option>
-                  <option value="conference-room">Conference Room</option>
-                </select>
-              </label>
-              <label><span id="quickQuantityLabel">No. of people</span><input required name="quantity" id="quickQuantity" type="number" min="1" value="1"></label>
-              <label>Payment mode
-                <select required name="paymentMode">
-                  <option value="spaces_account">Spaces Account</option>
-                  <option value="raza_manager">Raza / Manager</option>
-                  <option value="staff">Staff</option>
-                  <option value="abrar_owner">Abrar / Owner</option>
-                </select>
-              </label>
-              <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
-              <label>Total<input readonly name="total" id="quickTotal" type="number"></label>
-              <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>
-            </div>
-            <div class="rate-summary" id="quickInvoiceSummary"></div>
-            <div class="modal-actions inline-actions">
-              <button class="ghost-button" type="reset" id="resetQuickInvoice">Clear</button>
-              <button class="primary-button" type="submit">Generate receipt</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel cash-panel page-section" id="cash-accounting" data-page="cash-accounting">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Staff spending</p>
-              <h2>Expenses, card spend, and petty cash</h2>
-            </div>
-            <div class="cash-controls">
-              <label>Report month<input id="cashMonth" type="month"></label>
-              <button class="ghost-button" id="cashReport" type="button">Generate monthly report</button>
-            </div>
-          </div>
-          <div class="cash-summary-grid">
-            <div class="cash-balance">
-              <span>Opening balance</span>
-              <strong id="cashOpeningBalance">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Customer collections</span>
-              <strong id="cashReceivedMonth">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Internal top-ups</span>
-              <strong id="cashInternalMonth">PKR 0</strong>
-            </div>
-            <div class="cash-balance expense-balance">
-              <span>Total staff expenses</span>
-              <strong id="cashExpensesMonth">PKR 0</strong>
-            </div>
-            <div class="cash-balance expense-balance">
-              <span>Cash expenses</span>
-              <strong id="cashCashExpensesMonth">PKR 0</strong>
-            </div>
-            <div class="cash-balance expense-balance">
-              <span>Card expenses</span>
-              <strong id="cashCardExpensesMonth">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Petty cash in hand</span>
-              <strong id="cashBalance">PKR 0</strong>
-            </div>
-          </div>
-          <div class="cash-entry-grid">
-            <form id="expenseForm" class="staff-form compact-form">
-              <div class="section-heading">
-                <p class="eyebrow">Expenses</p>
-                <h2>Add expense</h2>
-              </div>
-              <div class="form-grid compact-grid">
-                <label>Date<input required name="entryDate" type="date"></label>
-                <label>Category<select required name="category" id="expenseCategory"></select></label>
-                <label>Paid using<select required name="paymentMethod" id="expensePaymentMethod">
-                  <option value="petty_cash">Cash / Petty cash</option>
-                  <option value="business_card">Business debit card</option>
-                </select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
-                <label>Paid to<input name="personName" placeholder="Vendor / person"></label>
-                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Bill number, reason, staff notes"></textarea></label>
-              </div>
-              <div class="modal-actions inline-actions">
-                <button class="primary-button" type="submit">Save expense</button>
-              </div>
-            </form>
-
-            <form id="receivingForm" class="staff-form compact-form">
-              <div class="section-heading">
-                <p class="eyebrow">Receiving</p>
-                <h2>Add cash received</h2>
-              </div>
-              <div class="form-grid compact-grid">
-                <label>Date<input required name="entryDate" type="date"></label>
-                <label>Source<select required name="source" id="receivingSource"></select></label>
-                <label>Payment source<select required name="paymentSource" id="receivingPaymentSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
-                <label>Received from<input required name="personName" placeholder="Name who paid / Abrar"></label>
-                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Member plan, transfer note, receipt reference"></textarea></label>
-              </div>
-              <div class="modal-actions inline-actions">
-                <button class="primary-button" type="submit">Save receiving</button>
-              </div>
-            </form>
-          </div>
-          <div class="sheet-toolbar">
-            <label class="search">
-              <span>Filter staff sheet</span>
-              <input id="cashSearch" type="search" placeholder="Category, source, person, notes">
-            </label>
-            <span class="sheet-message" id="cashMessage">Synced cash entries</span>
-          </div>
-          <div class="sheet-wrap">
-            <table class="cash-table sheet-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Category / Source</th>
-                  <th>Paid Using</th>
-                  <th>Person</th>
-                  <th>Amount</th>
-                  <th>Notes</th>
-                  <th>Save</th>
-                </tr>
-              </thead>
-              <tbody id="cashSheet"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel cash-panel owner-only page-section" id="owner-ledger" data-page="owner-ledger">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Owner only</p>
-              <h2>Business account, owner ledger, and balances</h2>
-            </div>
-            <div class="cash-controls">
-              <label>Report month<input id="ownerMonth" type="month"></label>
-              <button class="ghost-button" id="ownerReport" type="button">Generate owner report</button>
-            </div>
-          </div>
-          <div class="cash-summary-grid financial-grid">
-            <div class="cash-balance">
-              <span>Revenue in selected month</span>
-              <strong id="financeRevenue">PKR 0</strong>
-            </div>
-            <div class="cash-balance expense-balance">
-              <span>Owner expenses in selected month</span>
-              <strong id="financeOwnerExpenses">PKR 0</strong>
-            </div>
-            <div class="cash-balance expense-balance">
-              <span>Staff expenses in selected month</span>
-              <strong id="financeStaffExpenses">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Net profit in selected month</span>
-              <strong id="financeNetProfit">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Business / owner balance</span>
-              <strong id="financeOwnerBalance">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Staff petty cash</span>
-              <strong id="financeStaffBalance">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Outstanding invoices</span>
-              <strong id="financeOutstanding">PKR 0</strong>
-            </div>
-            <div class="cash-balance">
-              <span>Combined expenses</span>
-              <strong id="financeCompanyExpenses">PKR 0</strong>
-            </div>
-          </div>
-          <div class="source-breakdown" id="financeSourceBreakdown"></div>
-          <div class="cash-entry-grid">
-            <form id="ownerExpenseForm" class="staff-form compact-form">
-              <div class="section-heading">
-                <p class="eyebrow">Owner expense</p>
-                <h2>Add owner expense</h2>
-              </div>
-              <div class="form-grid compact-grid">
-                <label>Date<input required name="entryDate" type="date"></label>
-                <label>Category<select required name="category" id="ownerExpenseCategory"></select></label>
-                <label>Payment source<select required name="paymentSource" id="ownerExpenseSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
-                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Reason, vendor, transfer details"></textarea></label>
-                <label class="span-two">Attachment note<input name="attachment" placeholder="Bill link, file name, or WhatsApp reference"></label>
-              </div>
-              <div class="modal-actions inline-actions">
-                <button class="primary-button" type="submit">Save owner expense</button>
-              </div>
-            </form>
-
-            <form id="ownerReceivingForm" class="staff-form compact-form">
-              <div class="section-heading">
-                <p class="eyebrow">Owner receiving</p>
-                <h2>Add owner receiving</h2>
-              </div>
-              <div class="form-grid compact-grid">
-                <label>Date<input required name="entryDate" type="date"></label>
-                <label>Source<select required name="source" id="ownerReceivingSource"></select></label>
-                <label>Payment source<select required name="paymentSource" id="ownerReceivingPaymentSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
-                <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Received from staff, bank adjustment, other note"></textarea></label>
-              </div>
-              <div class="modal-actions inline-actions">
-                <button class="primary-button" type="submit">Save owner receiving</button>
-              </div>
-            </form>
-          </div>
-          <div class="sheet-toolbar">
-            <label class="search">
-              <span>Filter owner ledger</span>
-              <input id="ownerSearch" type="search" placeholder="Category, source, notes">
-            </label>
-            <span class="sheet-message" id="ownerMessage">Synced owner ledger</span>
-          </div>
-          <div class="sheet-wrap">
-            <table class="cash-table owner-table sheet-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Category / Source</th>
-                  <th>Payment Source</th>
-                  <th>Amount</th>
-                  <th>Notes</th>
-                  <th>Attachment</th>
-                  <th>Save</th>
-                </tr>
-              </thead>
-              <tbody id="ownerSheet"></tbody>
-            </table>
-          </div>
-          <div class="section-heading row ledger-audit-heading">
-            <div>
-              <p class="eyebrow">Audit log</p>
-              <h2>Recent transaction and client changes</h2>
-            </div>
-            <div class="sheet-actions">
-              <button class="ghost-button" id="auditReport" type="button">Export audit CSV</button>
-              <span class="sheet-message" id="auditMessage">Synced audit log</span>
-            </div>
-          </div>
-          <div class="sheet-wrap audit-wrap">
-            <table class="cash-table audit-table sheet-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Action</th>
-                  <th>Table</th>
-                  <th>Record</th>
-                  <th>Summary</th>
-                  <th>Before</th>
-                  <th>After</th>
-                </tr>
-              </thead>
-              <tbody id="auditLogSheet"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel member-form-panel page-section" id="member-form" data-page="members">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Staff member form</p>
-              <h2>Register a new member</h2>
-            </div>
-            <span class="form-hint">Plan rate can be discounted before saving.</span>
-          </div>
-          <form id="memberForm" class="staff-form">
-            <div class="form-grid">
-              <label>Name<input required name="name" placeholder="Member name"></label>
-              <label>Company<input name="company" placeholder="Company or team"></label>
-              <label>Phone<input required name="phone" placeholder="923001234567"></label>
-              <label>Email<input name="email" type="email" placeholder="name@example.com"></label>
-              <label>Plan<select required name="plan" id="planSelect"></select></label>
-              <label>Seats<input required name="seats" type="number" min="1" value="1"></label>
-              <label>Standard plan rate<input readonly name="basePlanPrice" type="number" min="0"></label>
-              <label>Offered monthly rate<input required name="monthlyFee" type="number" min="0" step="500"></label>
-              <label>Joining date<input required name="joiningDate" type="date"></label>
-              <label>Renewal date<input required name="renewalDate" type="date"></label>
-              <label>Deposit<input name="deposit" type="number" min="0" step="500" value="0"></label>
-              <label>Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
-              <label class="span-two">Notes<textarea name="notes" rows="3" placeholder="Access card, office number, custom terms"></textarea></label>
-            </div>
-            <div class="plan-lines-editor">
-              <div class="section-heading row">
-                <div>
-                  <p class="eyebrow">Plan bundle</p>
-                  <h2>Monthly invoice lines</h2>
-                </div>
-                <button class="ghost-button" id="addPlanLine" type="button">Add plan line</button>
-              </div>
-              <div class="plan-lines" id="memberPlanLines"></div>
-            </div>
-            <div class="rate-summary" id="rateSummary"></div>
-            <div class="modal-actions inline-actions">
-              <button class="ghost-button" id="resetMemberForm" type="reset">Clear</button>
-              <button class="primary-button" type="submit">Save member</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel sheet-panel page-section" id="member-sheet" data-page="members">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Client sheet</p>
-              <h2>Edit current client records</h2>
-            </div>
-            <div class="sheet-actions">
-              <a class="ghost-button" href="#members">Add current client</a>
-              <button class="ghost-button" id="refreshMembers" type="button">Refresh</button>
-              <button class="primary-button" id="saveAllSheetRows" type="button">Save changes</button>
-            </div>
-          </div>
-          <div class="sheet-toolbar">
-            <label class="search">
-              <span>Filter sheet</span>
-              <input id="sheetSearch" type="search" placeholder="Name, phone, plan, notes">
-            </label>
-            <span class="sheet-message" id="sheetMessage">No pending edits</span>
-          </div>
-          <div class="sheet-wrap">
-            <table class="sheet-table member-sheet-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Company</th>
-                  <th>Phone</th>
-                  <th>Email</th>
-                  <th>Plan</th>
-                  <th>Plan bundle</th>
-                  <th>Seats</th>
-                  <th>Joining</th>
-                  <th>Renewal</th>
-                  <th>Standard</th>
-                  <th>Offered</th>
-                  <th>Deposit</th>
-                  <th>Discount reason</th>
-                  <th>Notes</th>
-                  <th>Status</th>
-                  <th>Save</th>
-                </tr>
-              </thead>
-              <tbody id="memberSheet"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="content-grid page-section" id="members" data-page="members">
-          <div class="panel wide">
-            <div class="section-heading row">
-              <div>
-                <p class="eyebrow">Member database</p>
-                <h2>Members and renewal dates</h2>
-              </div>
-              <label class="search">
-                <span>Search</span>
-                <input id="memberSearch" type="search" placeholder="Name, company, phone, plan">
-              </label>
-            </div>
-            <div class="table-wrap">
-              <table class="member-table">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Category</th>
-                    <th>Plan</th>
-                    <th>Joining</th>
-                    <th>Valid Till</th>
-                    <th>Fee</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="membersTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-        </section>
-
-        <section class="panel page-section" id="receipts" data-page="receipts">
-          <div class="section-heading">
-            <p class="eyebrow">Receipt generator</p>
-            <h2>Payment queue</h2>
-          </div>
-          <div id="receiptQueue" class="receipt-list"></div>
-        </section>
-
-        <section class="panel page-section" id="accounting" data-page="accounting">
-          <div class="section-heading">
-            <p class="eyebrow">Accounting</p>
-            <h2>Monthly ledger</h2>
-          </div>
-          <div class="ledger" id="ledger"></div>
-        </section>
-
-        <section class="panel page-section" id="plans" data-page="plans">
-          <div class="section-heading">
-            <p class="eyebrow">Membership options</p>
-            <h2>Plan catalog</h2>
-          </div>
-          <div class="plan-list" id="planList"></div>
-        </section>
-
-        <section class="panel owner-only page-section" id="website-analytics" data-page="website-analytics">
-          <div class="section-heading row">
-            <div><p class="eyebrow">Customer website</p><h2>Visits and enquiry path</h2></div>
-            <span class="form-hint">Last 30 days. No names, phone numbers or personal visitor data are stored.</span>
-          </div>
-          <div class="cash-summary-grid website-summary">
-            <div class="cash-balance"><span>Visitors</span><strong id="webVisitors">0</strong></div>
-            <div class="cash-balance"><span>Visits this week</span><strong id="webWeekVisitors">0</strong></div>
-            <div class="cash-balance"><span>WhatsApp interest</span><strong id="webWhatsapp">0</strong></div>
-            <div class="cash-balance"><span>Directions</span><strong id="webMaps">0</strong></div>
-            <div class="cash-balance"><span>Brue clicks</span><strong id="webBrue">0</strong></div>
-          </div>
-          <div class="website-insights">
-            <div><h3>Visitor journey</h3><div id="webJourney" class="web-bars"></div></div>
-            <div><h3>Actions</h3><div id="webActions" class="web-actions"></div></div>
-          </div>
-          <p class="sheet-message" id="webAnalyticsMessage">Waiting for website traffic.</p>
-        </section>
-      </main>
-    </div>
-
-    <dialog id="editInvoiceDialog">
-      <form method="dialog" id="editInvoiceForm">
-        <div class="modal-header">
-          <div>
-            <p class="eyebrow">Edited invoice</p>
-            <h2>Send discounted invoice</h2>
-          </div>
-          <button class="icon-button" value="cancel" aria-label="Close" type="submit">x</button>
+        <div class="brue-copy">
+          <p class="eyebrow coffee-ink">At our front door</p>
+          <h2>Your workday can start with coffee.</h2>
+          <p>Brue Coffee lives inside our reception. Pick up your usual, find a seat and ease into the day. You do not need to choose a membership before you visit.</p>
+          <div class="brue-actions"><a class="button coffee-button" data-track="brue_order" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Visit Brue Coffee ↗</a><button class="text-button" type="button" data-open-visit>Planning to stay? We’ll show you around.</button></div>
+          <div class="word-line" aria-hidden="true">Coffee <span>·</span> conversation <span>·</span> somewhere to focus</div>
         </div>
-        <div class="form-grid">
-          <input type="hidden" name="memberId">
-          <label>Member<input readonly name="memberName"></label>
-          <label>Plan<input readonly name="plan"></label>
-          <label>Seats<input required name="seats" type="number" min="1"></label>
-          <label>Standard price<input required name="standardPrice" type="number" min="0" step="500"></label>
-          <label>Invoice amount<input required name="invoiceAmount" type="number" min="0" step="500"></label>
-          <label>Membership valid till<input required name="validTill" type="date"></label>
-          <label class="span-two">Discount / edit note<input name="editNote" placeholder="Discount approved by, temporary rate, adjustment details"></label>
-        </div>
-        <div class="modal-actions">
-          <button class="ghost-button" value="cancel" type="submit">Cancel</button>
-          <button class="primary-button" value="default" type="submit">Preview edited invoice</button>
-        </div>
-      </form>
-    </dialog>
+      </section>
 
-    <dialog id="receiptDialog">
-      <div class="receipt-preview" id="receiptPreview"></div>
-      <div class="receipt-send-status" id="receiptSendStatus" role="status" aria-live="polite"></div>
-      <div class="modal-actions receipt-actions">
-        <button class="ghost-button" id="closeReceipt" type="button">Close</button>
-        <button class="ghost-button" id="printReceipt" type="button">Print</button>
-        <button class="ghost-button" id="downloadReceipt" type="button">Save PDF</button>
-        <button class="primary-button" id="whatsappReceipt" type="button">Share PDF</button>
-        <a class="ghost-button manual-whatsapp" id="manualWhatsappReceipt" target="_blank" rel="noreferrer" hidden>Open WhatsApp Text</a>
-      </div>
-    </dialog>
+      <section class="experience shell" id="experience" data-track-section="gallery">
+        <div class="section-intro"><p class="eyebrow">The Spaces experience</p><h2>Come for an hour. Find your rhythm. Stay for the month.</h2></div>
+        <div class="experience-viewer">
+          <div class="experience-photo"><img id="experience-image" src="assets/dedicated-desk.jpg" alt="A dedicated desk at Spaces"></div>
+          <div class="experience-copy" aria-live="polite"><span id="experience-count">01 / 03</span><h3 id="experience-title">Focus</h3><p id="experience-text">Your own desk, personal storage and enough quiet to get properly into the work.</p><div class="slider-controls"><button type="button" data-slide-prev aria-label="Previous space">←</button><button type="button" data-slide-next aria-label="Next space">→</button></div></div>
+        </div>
+      </section>
 
-    <script src="app.js"></script>
+      <section class="memberships shell" id="plans" data-track-section="plans">
+        <div class="section-intro memberships-intro"><p class="eyebrow">Memberships</p><h2>A place that fits the way you work.</h2><p>Simple monthly options for individuals and teams. Tap a membership for the practical details.</p></div>
+        <div class="membership-list">
+          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>01</small><b>Dedicated Desk</b></span><em>Your own desk in our shared workspace</em><strong>Rs 17,500 <small>/ month</small></strong><i>+</i></button><div class="membership-details"><p>Permanent desk, personal storage, reliable internet, backup power and reception support.</p><a data-track="plan_dedicated" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Dedicated%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
+          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>02</small><b>Personal Desk</b></span><em>More privacy and room to make the desk yours</em><strong>Rs 20,000 <small>/ month</small></strong><i>+</i></button><div class="membership-details"><p>A more separated personal setup with internet, backup power and shared-facility access.</p><a data-track="plan_personal" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Personal%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
+          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>03</small><b>Private Rooms</b></span><em>Furnished rooms for teams of different sizes</em><strong>From Rs 18,500 <small>/ person / month</small></strong><i>+</i></button><div class="membership-details"><p>Move-in-ready team rooms with furniture, internet, backup power, reception support and meeting-room access.</p><a data-track="plan_room" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20check%20private%20room%20availability." target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
+        </div>
+        <p class="short-stays">Visiting for less time? Day passes are <b>Rs 1,500</b>, weekly access is <b>Rs 5,000</b>, and the meeting room is <b>Rs 1,500/hour</b>.</p>
+        <button class="button ink-button" type="button" data-open-visit data-track="plan_enquiry">Ask what is available</button>
+      </section>
+
+      <section class="amenities shell" id="amenities" data-track-section="amenities">
+        <div class="section-intro"><p class="eyebrow">Everything nearby</p><h2>You should not have to leave to get through the day.</h2><p>Coffee downstairs, lunch nearby, and a meeting room when the call becomes a conversation.</p></div>
+        <div class="amenity-layout">
+          <div class="amenity-list" role="tablist" aria-label="Spaces amenities">
+            <button class="active" type="button" role="tab" data-amenity-image="assets/cubicle.jpg" data-amenity-alt="A coffee mug at a Spaces workspace">Brue Coffee at reception</button>
+            <button type="button" role="tab" data-amenity-image="assets/small-room.jpg" data-amenity-alt="Comfortable furnished workspace at Spaces">Cafeteria and dining space</button>
+            <button type="button" role="tab" data-amenity-image="assets/dedicated-desk.jpg" data-amenity-alt="Dedicated desks at Spaces">High-speed internet & power backup</button>
+            <button type="button" role="tab" data-amenity-image="assets/meeting-room.jpg" data-amenity-alt="Meeting room at Spaces">Meeting and conference room</button>
+            <button type="button" role="tab" data-amenity-image="assets/spaces-interior.jpg" data-amenity-alt="Professionally managed Spaces coworking floor">Reception, office support & secure premises</button>
+          </div>
+          <div class="amenity-photo"><img src="assets/cubicle.jpg" alt="A coffee mug at a Spaces workspace" data-amenity-photo></div>
+        </div>
+      </section>
+
+      <section class="invitation" id="visit" data-track-section="visit">
+        <img src="assets/cubicle.jpg" alt="Warm four-person workspace at Spaces">
+        <div class="invitation-shade"></div>
+        <div class="invitation-copy"><p class="eyebrow light">An open invitation</p><h2>Not sure what kind of space you need? That’s completely fine.</h2><p>Grab a coffee from Brue and work from Spaces for a few hours on us. See how the place feels before deciding anything.</p><div><button class="button light-button" type="button" data-open-visit data-track="visit_planner">Plan my visit</button><a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Get directions ↗</a></div></div>
+      </section>
+
+      <section class="location shell" data-track-section="location">
+        <div><p class="eyebrow">Find us</p><h2>Spaces Coworking</h2><p>Mezzanine Floor, C-10, Block 4<br>Federal B Area, Karachi</p></div>
+        <div class="contact-list"><a href="tel:+923173337756">+92 317 3337756</a><a href="mailto:spaces.net.pk@gmail.com">spaces.net.pk@gmail.com</a><a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Open in Google Maps ↗</a></div>
+      </section>
+    </main>
+
+    <footer><img src="assets/spaces-white.png" alt="Spaces Coworking"><p>Work well. Stay awhile.</p><nav aria-label="Footer navigation"><a href="#plans">Memberships</a><a href="#amenities">Amenities</a><a href="#visit">Visit Spaces</a><a data-track="brue_footer" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a><a href="/admin">Staff login</a></nav><small>© 2026 Spaces Coworking · Federal B Area, Karachi</small></footer>
+
+    <dialog class="visit-dialog" id="visit-dialog"><form method="dialog" id="visit-form"><button class="dialog-close" value="cancel" aria-label="Close visit planner">×</button><p class="eyebrow">Plan a visit</p><h2>Come in, stay awhile.</h2><p>Tell us when you’re thinking of visiting and we’ll continue on WhatsApp.</p><label>Your name<input name="name" autocomplete="name" required></label><label>Phone number<input name="phone" type="tel" autocomplete="tel" required></label><div class="form-row"><label>Preferred day<input name="day" type="date" required></label><label>People<input name="people" type="number" min="1" value="1" required></label></div><button class="button ink-button" type="submit" data-track="visit_submit">Continue on WhatsApp</button></form></dialog>
+    <a class="mobile-whatsapp" data-track="whatsapp_visit" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20arrange%20a%20visit." target="_blank" rel="noreferrer">WhatsApp Spaces</a>
+    <script src="website.js"></script>
   </body>
 </html>

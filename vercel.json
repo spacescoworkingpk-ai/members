@@ -1,14 +1,11 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [
+  "redirects": [
     {
-      "source": "/",
-      "destination": "/website.html"
-    },
-    {
-      "source": "/admin",
-      "destination": "/index.html"
+      "source": "/website",
+      "destination": "/",
+      "permanent": true
     }
   ],
   "functions": {
