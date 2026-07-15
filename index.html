@@ -6,7 +6,7 @@
     <title>Spaces Coworking Karachi | Desks, Private Rooms & Brue Coffee</title>
     <meta name="description" content="A comfortable coworking space in Federal B Area, Karachi, with dedicated desks, personal desks, private team rooms, meeting facilities, a cafeteria and Brue Coffee at reception.">
     <meta name="keywords" content="coworking space Federal B Area Karachi, dedicated desk Karachi, personal desk Karachi, private office Karachi, meeting room Federal B Area, Brue Coffee Spaces">
-    <meta name="theme-color" content="#171717">
+    <meta name="theme-color" content="#1f262a">
     <meta name="robots" content="index, follow">
     <meta name="google-site-verification" content="lyvO8BXpWcJHS-L3OpjOFrFPc7dd2665ZMQJhN9QYg8">
     <meta property="og:type" content="website">
@@ -16,6 +16,9 @@
     <meta property="og:url" content="https://members-ivory.vercel.app/">
     <link rel="canonical" href="https://members-ivory.vercel.app/">
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" sizes="any">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
     <link rel="stylesheet" href="website.css">
     <link rel="stylesheet" href="video.css">
     <script type="application/ld+json">{"@context":"https://schema.org","@type":"CoworkingSpace","name":"Spaces Coworking","url":"https://members-ivory.vercel.app/","telephone":"+92-317-3337756","email":"spaces.net.pk@gmail.com","image":"https://members-ivory.vercel.app/assets/spaces-interior.jpg","priceRange":"PKR 1,500 - PKR 20,000+","address":{"@type":"PostalAddress","streetAddress":"Mezzanine Floor, C-10, Block 4, Federal B Area","addressLocality":"Karachi","addressCountry":"PK"},"amenityFeature":[{"@type":"LocationFeatureSpecification","name":"Brue Coffee at reception","value":true},{"@type":"LocationFeatureSpecification","name":"Cafeteria","value":true},{"@type":"LocationFeatureSpecification","name":"High-speed internet","value":true},{"@type":"LocationFeatureSpecification","name":"Backup power","value":true},{"@type":"LocationFeatureSpecification","name":"Meeting room","value":true}]}</script>
@@ -24,7 +27,11 @@
     <header class="site-header" data-header>
       <a class="logo" href="#home" aria-label="Spaces Coworking home"><img class="logo-light" src="assets/spaces-white.png" width="900" height="273" alt="Spaces Coworking"><img class="logo-dark" src="assets/spaces-colour.png" width="900" height="273" alt="" aria-hidden="true"></a>
       <nav aria-label="Main navigation">
-        <a href="#experience">Spaces</a><a href="#plans">Memberships</a><a href="#amenities">Amenities</a><a href="#visit">Visit</a><a class="brue-nav" data-track="brue_nav" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a>
+        <a href="#experience">Spaces</a>
+        <a href="#plans">Memberships</a>
+        <a href="#amenities">Amenities</a>
+        <a href="#visit">Visit</a>
+        <a class="brue-nav" data-track="brue_nav" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a>
       </nav>
       <button class="visit-trigger header-cta" type="button" data-open-visit data-track="visit_planner">Come by for coffee</button>
       <button class="menu-button" type="button" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
@@ -38,76 +45,185 @@
           <p class="eyebrow light">Coworking in Federal B Area, Karachi</p>
           <h1>A better place to spend your workday.</h1>
           <p>Thoughtful desks, private rooms and genuinely good coffee, all under one roof.</p>
-          <div class="hero-actions"><button class="button light-button" type="button" data-open-visit data-track="visit_planner">Come by for coffee</button><a href="#plans">Explore memberships <span>↓</span></a></div>
+          <div class="hero-actions">
+            <button class="button light-button" type="button" data-open-visit data-track="visit_planner">Come by for coffee</button>
+            <a href="#plans">Explore memberships <span>↓</span></a>
+          </div>
           <small>New here? Order from Brue and spend your first few hours working from Spaces on us.</small>
         </div>
       </section>
 
       <section class="brue" id="coffee" data-track-section="coffee">
-        <div class="brue-visual" aria-label="Brue Coffee at Spaces">
+        <div class="brue-visual" aria-label="Brue Coffee at Spaces" data-reveal>
           <video class="brue-video" autoplay muted loop playsinline preload="metadata" poster="assets/cubicle.jpg" aria-label="Brue Coffee at Spaces">
             <source src="assets/brue-coffee-web.m4v" type="video/mp4">
           </video>
           <button class="video-toggle" type="button" aria-label="Pause Brue Coffee video">Pause</button>
           <span class="brue-stamp">Brue Coffee<br><i>at Spaces</i></span>
         </div>
-        <div class="brue-copy">
+        <div class="brue-copy" data-reveal>
           <p class="eyebrow coffee-ink">At our front door</p>
           <h2>Your workday can start with coffee.</h2>
           <p>Brue Coffee lives inside our reception. Pick up your usual, find a seat and ease into the day. You do not need to choose a membership before you visit.</p>
-          <div class="brue-actions"><a class="button coffee-button" data-track="brue_order" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Visit Brue Coffee ↗</a><button class="text-button" type="button" data-open-visit>Planning to stay? We’ll show you around.</button></div>
+          <div class="brue-actions">
+            <a class="button coffee-button" data-track="brue_order" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Visit Brue Coffee ↗</a>
+            <button class="text-button" type="button" data-open-visit>Planning to stay? We’ll show you around.</button>
+          </div>
           <div class="word-line" aria-hidden="true">Coffee <span>·</span> conversation <span>·</span> somewhere to focus</div>
         </div>
       </section>
 
       <section class="experience shell" id="experience" data-track-section="gallery">
-        <div class="section-intro"><p class="eyebrow">The Spaces experience</p><h2>Come for an hour. Find your rhythm. Stay for the month.</h2></div>
-        <div class="experience-viewer">
+        <div class="section-intro" data-reveal>
+          <p class="eyebrow">The Spaces experience</p>
+          <h2>Come for an hour. Find your rhythm. Stay for the month.</h2>
+        </div>
+        <div class="experience-viewer" data-reveal>
           <div class="experience-photo"><img id="experience-image" src="assets/dedicated-desk.jpg" width="2000" height="1501" loading="lazy" alt="A dedicated desk at Spaces"></div>
-          <div class="experience-copy" aria-live="polite"><span id="experience-count">01 / 03</span><h3 id="experience-title">Focus</h3><p id="experience-text">Your own desk, personal storage and enough quiet to get properly into the work.</p><div class="slider-controls"><button type="button" data-slide-prev aria-label="Previous space">←</button><button type="button" data-slide-next aria-label="Next space">→</button></div></div>
+          <div class="experience-copy" aria-live="polite">
+            <span id="experience-count">01 / 03</span>
+            <h3 id="experience-title">Focus</h3>
+            <p id="experience-text">Your own desk, personal storage and enough quiet to get properly into the work.</p>
+            <div class="slider-controls">
+              <button type="button" data-slide-prev aria-label="Previous space">←</button>
+              <button type="button" data-slide-next aria-label="Next space">→</button>
+            </div>
+          </div>
         </div>
       </section>
 
       <section class="memberships shell" id="plans" data-track-section="plans">
-        <div class="section-intro memberships-intro"><p class="eyebrow">Memberships</p><h2>A place that fits the way you work.</h2><p>Simple monthly options for individuals and teams. Tap a membership for the practical details.</p></div>
-        <div class="membership-list">
-          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>01</small><b>Dedicated Desk</b></span><em>Your own desk in our shared workspace</em><strong>Rs 17,500 <small>/ month</small></strong><i>+</i></button><div class="membership-details"><p>Permanent desk, personal storage, reliable internet, backup power and reception support.</p><a data-track="plan_dedicated" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Dedicated%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
-          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>02</small><b>Personal Desk</b></span><em>More privacy and room to make the desk yours</em><strong>Rs 20,000 <small>/ month</small></strong><i>+</i></button><div class="membership-details"><p>A more separated personal setup with internet, backup power and shared-facility access.</p><a data-track="plan_personal" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Personal%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
-          <article><button class="membership-summary" type="button" aria-expanded="false"><span><small>03</small><b>Private Rooms</b></span><em>Furnished rooms for teams of different sizes</em><strong>From Rs 18,500 <small>/ person / month</small></strong><i>+</i></button><div class="membership-details"><p>Move-in-ready team rooms with furniture, internet, backup power, reception support and meeting-room access.</p><a data-track="plan_room" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20check%20private%20room%20availability." target="_blank" rel="noreferrer">Ask about availability →</a></div></article>
+        <div class="section-intro memberships-intro" data-reveal>
+          <div>
+            <p class="eyebrow">Memberships</p>
+            <h2>A place that fits the way you work.</h2>
+            <p>Simple monthly options for individuals and teams. Tap a membership for the practical details.</p>
+          </div>
         </div>
-        <p class="short-stays">Visiting for less time? Day passes are <b>Rs 1,500</b>, weekly access is <b>Rs 5,000</b>, and the meeting room is <b>Rs 1,500/hour</b>.</p>
-        <button class="button ink-button" type="button" data-open-visit data-track="plan_enquiry">Ask what is available</button>
+        <div class="membership-list" data-reveal>
+          <article>
+            <button class="membership-summary" type="button" aria-expanded="false">
+              <b>Dedicated Desk</b>
+              <em>Your own desk in our shared workspace</em>
+              <strong>Rs 17,500 <small>/ month</small></strong>
+              <i>+</i>
+            </button>
+            <div class="membership-details">
+              <div class="membership-details-body">
+                <p>Permanent desk, personal storage, reliable internet, backup power and reception support.</p>
+                <a data-track="plan_dedicated" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Dedicated%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a>
+              </div>
+            </div>
+          </article>
+          <article>
+            <button class="membership-summary" type="button" aria-expanded="false">
+              <b>Personal Desk</b>
+              <em>More privacy and room to make the desk yours</em>
+              <strong>Rs 20,000 <small>/ month</small></strong>
+              <i>+</i>
+            </button>
+            <div class="membership-details">
+              <div class="membership-details-body">
+                <p>A more separated personal setup with internet, backup power and shared-facility access.</p>
+                <a data-track="plan_personal" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20is%20a%20Personal%20Desk%20available%3F" target="_blank" rel="noreferrer">Ask about availability →</a>
+              </div>
+            </div>
+          </article>
+          <article>
+            <button class="membership-summary" type="button" aria-expanded="false">
+              <b>Private Rooms</b>
+              <em>Furnished rooms for teams of different sizes</em>
+              <strong>From Rs 18,500 <small>/ person / month</small></strong>
+              <i>+</i>
+            </button>
+            <div class="membership-details">
+              <div class="membership-details-body">
+                <p>Move-in-ready team rooms with furniture, internet, backup power, reception support and meeting-room access.</p>
+                <a data-track="plan_room" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20check%20private%20room%20availability." target="_blank" rel="noreferrer">Ask about availability →</a>
+              </div>
+            </div>
+          </article>
+        </div>
+        <p class="short-stays" data-reveal>Visiting for less time? Day passes are <b>Rs 1,500</b>, weekly access is <b>Rs 5,000</b>, and the meeting room is <b>Rs 1,500/hour</b>.</p>
+        <button class="button ink-button" type="button" data-open-visit data-track="plan_enquiry" data-reveal>Ask what is available</button>
       </section>
 
-      <section class="amenities shell" id="amenities" data-track-section="amenities">
-        <div class="section-intro"><p class="eyebrow">Everything nearby</p><h2>You should not have to leave to get through the day.</h2><p>Coffee downstairs, lunch nearby, and a meeting room when the call becomes a conversation.</p></div>
-        <div class="amenity-layout">
-          <div class="amenity-list" role="tablist" aria-label="Spaces amenities">
-            <button class="active" type="button" role="tab" data-amenity-image="assets/cubicle.jpg" data-amenity-alt="A coffee mug at a Spaces workspace">Brue Coffee at reception</button>
-            <button type="button" role="tab" data-amenity-image="assets/small-room.jpg" data-amenity-alt="Comfortable furnished workspace at Spaces">Cafeteria and dining space</button>
-            <button type="button" role="tab" data-amenity-image="assets/dedicated-desk.jpg" data-amenity-alt="Dedicated desks at Spaces">High-speed internet & power backup</button>
-            <button type="button" role="tab" data-amenity-image="assets/meeting-room.jpg" data-amenity-alt="Meeting room at Spaces">Meeting and conference room</button>
-            <button type="button" role="tab" data-amenity-image="assets/spaces-interior.jpg" data-amenity-alt="Professionally managed Spaces coworking floor">Reception, office support & secure premises</button>
+      <section class="amenities" id="amenities" data-track-section="amenities">
+        <div class="shell">
+          <div class="section-intro" data-reveal>
+            <p class="eyebrow">Everything nearby</p>
+            <h2>You should not have to leave to get through the day.</h2>
+            <p>Coffee downstairs, lunch nearby, and a meeting room when the call becomes a conversation.</p>
           </div>
-          <div class="amenity-photo"><img src="assets/cubicle.jpg" width="2000" height="1501" loading="lazy" alt="A coffee mug at a Spaces workspace" data-amenity-photo></div>
+          <div class="amenity-layout" data-reveal>
+            <div class="amenity-list" role="tablist" aria-label="Spaces amenities">
+              <button class="active" type="button" role="tab" data-amenity-image="assets/cubicle.jpg" data-amenity-alt="A coffee mug at a Spaces workspace">Brue Coffee at reception</button>
+              <button type="button" role="tab" data-amenity-image="assets/small-room.jpg" data-amenity-alt="Comfortable furnished workspace at Spaces">Cafeteria and dining space</button>
+              <button type="button" role="tab" data-amenity-image="assets/dedicated-desk.jpg" data-amenity-alt="Dedicated desks at Spaces">High-speed internet &amp; power backup</button>
+              <button type="button" role="tab" data-amenity-image="assets/meeting-room.jpg" data-amenity-alt="Meeting room at Spaces">Meeting and conference room</button>
+              <button type="button" role="tab" data-amenity-image="assets/spaces-interior.jpg" data-amenity-alt="Professionally managed Spaces coworking floor">Reception, office support &amp; secure premises</button>
+            </div>
+            <div class="amenity-photo"><img src="assets/cubicle.jpg" width="2000" height="1501" loading="lazy" alt="A coffee mug at a Spaces workspace" data-amenity-photo></div>
+          </div>
         </div>
       </section>
 
       <section class="invitation" id="visit" data-track-section="visit">
         <img src="assets/cubicle.jpg" width="2000" height="1501" loading="lazy" alt="Warm four-person workspace at Spaces">
         <div class="invitation-shade"></div>
-        <div class="invitation-copy"><p class="eyebrow light">An open invitation</p><h2>Not sure what kind of space you need? That’s completely fine.</h2><p>Grab a coffee from Brue and work from Spaces for a few hours on us. See how the place feels before deciding anything.</p><div><button class="button light-button" type="button" data-open-visit data-track="visit_planner">Plan my visit</button><a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Get directions ↗</a></div></div>
+        <div class="invitation-copy">
+          <p class="eyebrow light">An open invitation</p>
+          <h2>Not sure what kind of space you need? That’s completely fine.</h2>
+          <p>Grab a coffee from Brue and work from Spaces for a few hours on us. See how the place feels before deciding anything.</p>
+          <div>
+            <button class="button light-button" type="button" data-open-visit data-track="visit_planner">Plan my visit</button>
+            <a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Get directions ↗</a>
+          </div>
+        </div>
       </section>
 
-      <section class="location shell" data-track-section="location">
-        <div><p class="eyebrow">Find us</p><h2>Spaces Coworking</h2><p>Mezzanine Floor, C-10, Block 4<br>Federal B Area, Karachi</p></div>
-        <div class="contact-list"><a href="tel:+923173337756">+92 317 3337756</a><a href="mailto:spaces.net.pk@gmail.com">spaces.net.pk@gmail.com</a><a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Open in Google Maps ↗</a></div>
+      <section class="location" data-track-section="location">
+        <div data-reveal>
+          <p class="eyebrow">Find us</p>
+          <h2>Spaces Coworking</h2>
+          <p>Mezzanine Floor, C-10, Block 4<br>Federal B Area, Karachi</p>
+        </div>
+        <div class="contact-list" data-reveal>
+          <a href="tel:+923173337756">+92 317 3337756</a>
+          <a href="mailto:spaces.net.pk@gmail.com">spaces.net.pk@gmail.com</a>
+          <a data-track="maps" href="https://share.google/igD0kJVOUkfyKoCPY" target="_blank" rel="noreferrer">Open in Google Maps</a>
+        </div>
       </section>
     </main>
 
-    <footer><img src="assets/spaces-white.png" width="900" height="273" loading="lazy" alt="Spaces Coworking"><p>Work well. Stay awhile.</p><nav aria-label="Footer navigation"><a href="#plans">Memberships</a><a href="#amenities">Amenities</a><a href="#visit">Visit Spaces</a><a data-track="brue_footer" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a><a href="/admin">Staff login</a></nav><small>© 2026 Spaces Coworking · Federal B Area, Karachi</small></footer>
+    <footer>
+      <img src="assets/spaces-white.png" width="900" height="273" loading="lazy" alt="Spaces Coworking">
+      <p>Work well. Stay awhile.</p>
+      <nav aria-label="Footer navigation">
+        <a href="#plans">Memberships</a>
+        <a href="#amenities">Amenities</a>
+        <a href="#visit">Visit Spaces</a>
+        <a data-track="brue_footer" href="https://bruecoffeepk.com" target="_blank" rel="noreferrer">Brue Coffee ↗</a>
+        <a href="/admin">Staff login</a>
+      </nav>
+      <small>© 2026 Spaces Coworking · Federal B Area, Karachi</small>
+    </footer>
 
-    <dialog class="visit-dialog" id="visit-dialog"><form method="dialog" id="visit-form"><button class="dialog-close" value="cancel" aria-label="Close visit planner">×</button><p class="eyebrow">Plan a visit</p><h2>Come in, stay awhile.</h2><p>Tell us when you’re thinking of visiting and we’ll continue on WhatsApp.</p><label>Your name<input name="name" autocomplete="name" required></label><label>Phone number<input name="phone" type="tel" autocomplete="tel" required></label><div class="form-row"><label>Preferred day<input name="day" type="date" required></label><label>People<input name="people" type="number" min="1" value="1" required></label></div><button class="button ink-button" type="submit" data-track="visit_submit">Continue on WhatsApp</button></form></dialog>
+    <dialog class="visit-dialog" id="visit-dialog">
+      <form method="dialog" id="visit-form">
+        <button class="dialog-close" value="cancel" aria-label="Close visit planner">×</button>
+        <p class="eyebrow">Plan a visit</p>
+        <h2>Come in, stay awhile.</h2>
+        <p>Tell us when you’re thinking of visiting and we’ll continue on WhatsApp.</p>
+        <label>Your name<input name="name" autocomplete="name" required></label>
+        <label>Phone number<input name="phone" type="tel" autocomplete="tel" required></label>
+        <div class="form-row">
+          <label>Preferred day<input name="day" type="date" required></label>
+          <label>People<input name="people" type="number" min="1" value="1" required></label>
+        </div>
+        <button class="button ink-button" type="submit" data-track="visit_submit">Continue on WhatsApp</button>
+      </form>
+    </dialog>
     <a class="mobile-whatsapp" data-track="whatsapp_visit" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20arrange%20a%20visit." target="_blank" rel="noreferrer">WhatsApp Spaces</a>
     <script src="website.js"></script>
   </body>

@@ -1,6 +1,22 @@
+document.documentElement.classList.add("js");
+
 const header = document.querySelector("[data-header]");
 const menuButton = document.querySelector(".menu-button");
 const navigation = document.querySelector(".site-header nav");
+
+// Gentle scroll reveals. The hidden state only exists under html.js, so the
+// page stays fully readable if this script never runs.
+const revealElements = document.querySelectorAll("[data-reveal]");
+if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  const revealObserver = new IntersectionObserver((entries) => entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add("revealed");
+    revealObserver.unobserve(entry.target);
+  }), { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+  revealElements.forEach((element) => revealObserver.observe(element));
+} else {
+  revealElements.forEach((element) => element.classList.add("revealed"));
+}
 
 function updateHeader() {
   header.classList.toggle("stuck", window.scrollY > 80);

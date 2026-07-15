@@ -1,5 +1,5 @@
 .brue-visual {
-  height: 540px;
+  height: clamp(420px, 46vw, 620px);
   min-height: 0;
 }
 
@@ -14,34 +14,37 @@
 
 .video-toggle {
   position: absolute;
-  right: 22px;
-  bottom: 22px;
+  right: 18px;
+  top: 18px;
   z-index: 2;
-  min-width: 62px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  background: rgba(23, 23, 23, 0.58);
+  min-width: 66px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(23, 25, 27, 0.5);
   color: #fff;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
   backdrop-filter: blur(8px);
+  transition: background-color 240ms ease, border-color 240ms ease;
+}
+
+.video-toggle:hover {
+  background: rgba(23, 25, 27, 0.75);
+  border-color: rgba(255, 255, 255, 0.85);
 }
 
 @media (max-width: 560px) {
   .brue-visual {
-    height: 380px;
+    height: 360px;
   }
 
   .video-toggle {
-    right: 16px;
-    bottom: 16px;
-  }
-}
-
-@media (min-width: 561px) and (max-width: 850px) {
-  .brue-visual {
-    height: 440px;
+    right: 14px;
+    top: 14px;
   }
 }
