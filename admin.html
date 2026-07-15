@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" sizes="any">
     <title>Spaces Coworking Management</title>
     <link rel="stylesheet" href="styles.css">
   </head>
@@ -594,6 +595,21 @@
         <button class="ghost-button" id="downloadReceipt" type="button">Save PDF</button>
         <button class="primary-button" id="whatsappReceipt" type="button">Share PDF</button>
         <a class="ghost-button manual-whatsapp" id="manualWhatsappReceipt" target="_blank" rel="noreferrer" hidden>Open WhatsApp Text</a>
+      </div>
+    </dialog>
+
+    <dialog id="paymentSourceDialog" class="payment-source-dialog">
+      <div class="payment-source-panel">
+        <div class="modal-header">
+          <div><p class="eyebrow">Payment confirmation</p><h2 id="paymentSourceTitle">How was this payment collected?</h2></div>
+        </div>
+        <div class="payment-source-grid">
+          <button type="button" data-payment-source="spaces_account"><strong>Spaces Account</strong><span>Main business bank account</span></button>
+          <button type="button" data-payment-source="raza_manager"><strong>Raza / Manager</strong><span>Cash collected by the manager</span></button>
+          <button type="button" data-payment-source="staff"><strong>Staff</strong><span>Cash collected by staff</span></button>
+          <button type="button" data-payment-source="abrar_owner"><strong>Abrar / Owner</strong><span>Collected directly by the owner</span></button>
+        </div>
+        <button class="ghost-button" id="cancelPaymentSource" type="button">Cancel</button>
       </div>
     </dialog>
 

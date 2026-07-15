@@ -117,7 +117,8 @@ let currentReceiptShare = {
   message: "",
   fileName: "spaces-receipt.pdf",
   receipt: null,
-  memberId: null
+  memberId: null,
+  pdfPromise: null
 };
 
 const sessionKey = "spaces-coworking-staff-session";
@@ -225,6 +226,9 @@ const els = {
   editInvoiceDialog: document.querySelector("#editInvoiceDialog"),
   editInvoiceForm: document.querySelector("#editInvoiceForm"),
   receiptDialog: document.querySelector("#receiptDialog"),
+  paymentSourceDialog: document.querySelector("#paymentSourceDialog"),
+  paymentSourceTitle: document.querySelector("#paymentSourceTitle"),
+  cancelPaymentSource: document.querySelector("#cancelPaymentSource"),
   receiptPreview: document.querySelector("#receiptPreview"),
   whatsappReceipt: document.querySelector("#whatsappReceipt"),
   manualWhatsappReceipt: document.querySelector("#manualWhatsappReceipt"),
@@ -250,6 +254,31 @@ function saveSession(nextSession) {
   } else {
     localStorage.removeItem(sessionKey);
   }
+}
+
+let sessionRefreshPromise = null;
+
+async function refreshSession() {
+  if (!session?.refresh_token) throw new Error("Session expired");
+  if (sessionRefreshPromise) return sessionRefreshPromise;
+  sessionRefreshPromise = fetch(`${supabaseConfig.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: supabaseConfig.anonKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: session.refresh_token })
+  }).then(async (response) => {
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error_description || payload.msg || "Session expired");
+    saveSession(payload);
+    return payload;
+  }).finally(() => {
+    sessionRefreshPromise = null;
+  });
+  return sessionRefreshPromise;
+}
+
+async function ensureFreshSession() {
+  const expiresAt = Number(session?.expires_at || 0) * 1000;
+  if (expiresAt && expiresAt - Date.now() < 120000) await refreshSession();
 }
 
 function showAuth(message = "") {
@@ -279,10 +308,11 @@ async function login(email, password) {
   saveSession(payload);
 }
 
-async function supabaseRequest(path, options = {}) {
+async function supabaseRequest(path, options = {}, retry = true) {
   if (!session?.access_token) {
     throw new Error("Staff login required");
   }
+  await ensureFreshSession();
   const headers = {
     apikey: supabaseConfig.anonKey,
     Authorization: `Bearer ${session.access_token}`,
@@ -295,6 +325,14 @@ async function supabaseRequest(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   if (response.status === 401) {
+    if (retry && session?.refresh_token) {
+      try {
+        await refreshSession();
+        return supabaseRequest(path, options, false);
+      } catch {
+        // Continue to the sign-in reset below.
+      }
+    }
     saveSession(null);
     showAuth("Session expired. Please sign in again.");
     throw new Error("Session expired");
@@ -371,71 +409,56 @@ async function loadData() {
   const invoiceSelect = canSeeRevenue()
     ? "select=*&order=created_at.desc"
     : "select=id,invoice_number,member_id,invoice_type,issue_date,valid_till,status,created_at&order=created_at.desc";
-  const [planRows, memberRows, invoiceRows, paymentRows] = await Promise.all([
+  const optionalRows = (table, query) => selectRows(table, query)
+    .then((rows) => ({ rows, ready: true }))
+    .catch((error) => {
+      console.warn(`${table} unavailable`, error);
+      return { rows: [], ready: false };
+    });
+  const skipped = { rows: [], ready: false };
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const [
+    planRows,
+    memberRows,
+    invoiceRows,
+    paymentRows,
+    cashResult,
+    salesResult,
+    planItemsResult,
+    ownerResult,
+    auditResult,
+    websiteResult
+  ] = await Promise.all([
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
     selectRows("members", "select=*&order=created_at.desc"),
     selectRows("invoices", invoiceSelect),
-    canSeeRevenue() ? selectRows("payments", "select=*&order=paid_at.desc") : Promise.resolve([])
+    canSeeRevenue() ? selectRows("payments", "select=*&order=paid_at.desc") : Promise.resolve([]),
+    optionalRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc"),
+    optionalRows("sales_receipts", "select=*&order=receipt_date.desc,created_at.desc"),
+    optionalRows("member_plan_items", "select=*&order=sort_order.asc,created_at.asc"),
+    canSeeRevenue() ? optionalRows("owner_ledger", "select=*&order=entry_date.desc,created_at.desc") : Promise.resolve(skipped),
+    canSeeRevenue() ? optionalRows("transaction_audit", "select=*&order=created_at.desc&limit=100") : Promise.resolve(skipped),
+    canSeeRevenue() ? optionalRows("website_events", `select=*&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`) : Promise.resolve(skipped)
   ]);
-  try {
-    cashEntries = await selectRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc");
-    cashLedgerReady = true;
-  } catch (error) {
-    cashEntries = [];
-    cashLedgerReady = false;
-    console.warn("cash_ledger unavailable", error);
-  }
+  cashEntries = cashResult.rows;
+  cashLedgerReady = cashResult.ready;
+  salesReceipts = salesResult.rows;
+  salesReceiptsReady = salesResult.ready;
+  memberPlanItems = planItemsResult.rows;
+  memberPlanItemsReady = planItemsResult.ready;
+  ownerEntries = ownerResult.rows;
+  auditLogs = auditResult.rows;
+  websiteEvents = websiteResult.rows;
   if (canSeeRevenue()) {
-    try {
-      ownerEntries = await selectRows("owner_ledger", "select=*&order=entry_date.desc,created_at.desc");
-      ownerLedgerReady = true;
-    } catch (error) {
-      ownerEntries = [];
-      ownerLedgerReady = false;
-      console.warn("owner_ledger unavailable", error);
-    }
-    try {
-      auditLogs = await selectRows("transaction_audit", "select=*&order=created_at.desc&limit=100");
-      auditLogReady = true;
-    } catch (error) {
-      auditLogs = [];
-      auditLogReady = false;
-      console.warn("transaction_audit unavailable", error);
-    }
-    try {
-      const since = new Date(Date.now() - 30 * 86400000).toISOString();
-      websiteEvents = await selectRows("website_events", `select=*&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`);
-      websiteAnalyticsReady = true;
-    } catch (error) {
-      websiteEvents = [];
-      websiteAnalyticsReady = false;
-      console.warn("website_events unavailable", error);
-    }
+    ownerLedgerReady = ownerResult.ready;
+    auditLogReady = auditResult.ready;
+    websiteAnalyticsReady = websiteResult.ready;
   } else {
-    ownerEntries = [];
-    auditLogs = [];
     ownerLedgerReady = false;
-    websiteEvents = [];
-  }
-  try {
-    salesReceipts = await selectRows("sales_receipts", "select=*&order=receipt_date.desc,created_at.desc");
-    salesReceiptsReady = true;
-  } catch (error) {
-    salesReceipts = [];
-    salesReceiptsReady = false;
-    console.warn("sales_receipts unavailable", error);
   }
   plans = planRows.map(mapPlan);
   invoices = invoiceRows;
   payments = paymentRows;
-  try {
-    memberPlanItems = await selectRows("member_plan_items", "select=*&order=sort_order.asc,created_at.asc");
-    memberPlanItemsReady = true;
-  } catch (error) {
-    memberPlanItems = [];
-    memberPlanItemsReady = false;
-    console.warn("member_plan_items unavailable", error);
-  }
   memberRecords = memberRows.map(mapMember);
   members = memberRecords.filter((member) => member.status === "active");
   renderPlans();
@@ -553,7 +576,15 @@ function mapMember(row) {
   const paidPayment = paidInvoice
     ? payments.find((payment) => payment.invoice_id === paidInvoice.id)
     : null;
-  const previousUnpaidInvoices = memberInvoices.filter((invoice) => invoice.status !== "paid" && invoice.valid_till < cycle.validTill);
+  const previousUnpaidInvoices = memberInvoices.filter((invoice) => {
+    const type = invoice.invoice_type || "membership";
+    return type === "membership"
+      && ["sent", "overdue"].includes(invoice.status)
+      && invoice.valid_till < cycle.validTill;
+  });
+  const editedInvoice = memberInvoices
+    .filter((invoice) => invoice.invoice_type === "edited" && invoice.status === "sent" && invoice.valid_till === cycle.validTill)
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0] || null;
   return {
     id: row.id,
     name: row.full_name,
@@ -579,6 +610,7 @@ function mapMember(row) {
     paid: Boolean(paidInvoice),
     paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null,
     paidAmount: paidPayment ? Number(paidPayment.amount || 0) : Number(paidInvoice?.total_amount || 0),
+    editedInvoice,
     previousUnpaidAmount: previousUnpaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0),
     previousUnpaidCount: previousUnpaidInvoices.length
   };
@@ -898,15 +930,24 @@ function showActivePage() {
 }
 
 function promptPaymentSource(title = "Select payment source") {
-  const lines = paymentSources.map((source, index) => `${index + 1}. ${source.label}`).join("\n");
-  const answer = window.prompt(`${title}\n\n${lines}\n\nEnter 1, 2, 3, or 4:`);
-  if (answer === null) return null;
-  const selected = paymentSources[Number(answer.trim()) - 1];
-  if (!selected) {
-    alert("Payment source is required before saving this payment.");
-    return null;
-  }
-  return selected.key;
+  return new Promise((resolve) => {
+    const dialog = els.paymentSourceDialog;
+    if (!dialog) return resolve(null);
+    els.paymentSourceTitle.textContent = title;
+    const finish = (value) => {
+      dialog.close();
+      resolve(value);
+    };
+    dialog.querySelectorAll("[data-payment-source]").forEach((button) => {
+      button.onclick = () => finish(button.dataset.paymentSource);
+    });
+    els.cancelPaymentSource.onclick = () => finish(null);
+    dialog.oncancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+    dialog.showModal();
+  });
 }
 
 function categorySummaries() {
@@ -983,7 +1024,7 @@ function renderWebsiteAnalytics() {
 }
 
 function renderMetrics() {
-  const total = members.reduce((sum, member) => sum + Number(member.monthlyFee), 0);
+  const total = members.reduce((sum, member) => sum + Number(member.editedInvoice?.total_amount ?? member.monthlyFee ?? 0), 0);
   const collected = members.filter((member) => member.paid).reduce((sum, member) => sum + Number(member.paidAmount || member.monthlyFee), 0);
   const previousUnpaid = members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
   const pending = total - collected + previousUnpaid;
@@ -1408,8 +1449,8 @@ function renderLedger() {
   const groups = [
     ["Total room sales", `${roomSummary.occupied}/${roomSummary.capacity} capacity used (${roomSummary.utilization}%)`, roomSummary.revenue],
     ["Individual desk sales", `${deskSummaries.reduce((sum, summary) => sum + summary.occupied, 0)}/${deskSummaries.reduce((sum, summary) => sum + summary.capacity, 0)} desk capacity used`, deskSummaries.reduce((sum, summary) => sum + summary.revenue, 0)],
-    ["Collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.paidAmount || member.monthlyFee), 0)],
-    ["Outstanding", `${outstanding.length} pending record${outstanding.length === 1 ? "" : "s"}`, outstanding.reduce((sum, member) => sum + Number(member.monthlyFee), 0)],
+    ["Membership collected", `${collected.length} paid record${collected.length === 1 ? "" : "s"}`, collected.reduce((sum, member) => sum + Number(member.paidAmount || member.monthlyFee), 0)],
+    ["Outstanding", `${outstanding.length} pending record${outstanding.length === 1 ? "" : "s"}`, outstanding.reduce((sum, member) => sum + Number(member.editedInvoice?.total_amount ?? member.monthlyFee ?? 0), 0)],
     ["Previous unpaid", `${previousUnpaidCount} older invoice${previousUnpaidCount === 1 ? "" : "s"} unpaid`, previousUnpaidAmount],
     ["Deposits held", `${members.length} active record${members.length === 1 ? "" : "s"}`, members.reduce((sum, member) => sum + Number(member.deposit || 0), 0)]
   ];
@@ -1458,9 +1499,32 @@ function isQuickRevenueEntry(entry) {
   return ["Day Pass", "Weekly Pass", "Conference Room"].includes(source);
 }
 
+function isSystemLedgerEntry(entry) {
+  if (!entry) return false;
+  if (["membership_payment", "quick_receipt"].includes(entry.origin)) return true;
+  return entry.entry_type === "receiving"
+    && ["Membership receipt", "Day Pass", "Weekly Pass", "Conference Room"].includes(String(entry.source || ""));
+}
+
+function isRevenueLedgerEntry(entry) {
+  return isSystemLedgerEntry(entry) || Boolean(entry.invoice_id || entry.sales_receipt_id);
+}
+
+function dateKeyInKarachi(value) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date(value));
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 function entryInRange(entry, range, dateField = "entry_date") {
   if (!range) return true;
-  const value = String(entry[dateField] || "").slice(0, 10);
+  const value = dateField === "paid_at"
+    ? dateKeyInKarachi(entry[dateField])
+    : String(entry[dateField] || "").slice(0, 10);
   return value >= range.start && value < range.end;
 }
 
@@ -1502,17 +1566,24 @@ function financialSummary(range = null) {
   const ownerCollectedRevenue = Number(sourceTotals.spaces_account || 0) + Number(sourceTotals.abrar_owner || 0);
   const ownerNonRevenueReceiving = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "receiving")
-    .filter((entry) => !isQuickRevenueEntry(entry) && String(entry.source || "").toLowerCase() !== "membership receipt")
+    .filter((entry) => !isRevenueLedgerEntry(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerOutgoing = scopedOwnerEntries
     .filter((entry) => entry.entry_type === "expense")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const ownerBalance = ownerCollectedRevenue + ownerNonRevenueReceiving - ownerOutgoing - staffCardExpenses;
   const staffBalance = scopedCashEntries.reduce((sum, entry) => sum + cashAmount(entry), 0);
-  const outstanding = members
+  const activeOutstanding = members
     .filter((member) => !member.paid)
-    .reduce((sum, member) => sum + Number(member.monthlyFee || 0), 0)
+    .reduce((sum, member) => sum + Number(member.editedInvoice?.total_amount ?? member.monthlyFee ?? 0), 0)
     + members.reduce((sum, member) => sum + Number(member.previousUnpaidAmount || 0), 0);
+  const archivedOutstanding = memberRecords
+    .filter((member) => member.status !== "active")
+    .reduce((sum, member) => sum + invoices
+      .filter((invoice) => invoice.member_id === member.id)
+      .filter((invoice) => (invoice.invoice_type || "membership") === "membership" && ["sent", "overdue"].includes(invoice.status))
+      .reduce((invoiceSum, invoice) => invoiceSum + Number(invoice.total_amount || 0), 0), 0);
+  const outstanding = activeOutstanding + archivedOutstanding;
   const companyExpenses = ownerExpenses + staffExpenses;
   return {
     sourceTotals,
@@ -1591,6 +1662,7 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
 }
 
 function canEditCashEntry(entry) {
+  if (isSystemLedgerEntry(entry)) return false;
   if (canSeeRevenue()) return true;
   if (entry.created_by && entry.created_by !== session?.user?.id) return false;
   const createdAt = new Date(entry.created_at || entry.entry_date);
@@ -1600,7 +1672,8 @@ function canEditCashEntry(entry) {
 function cashEntryOptions(type, selected) {
   const options = type === "expense"
     ? [...expenseCategories, "Returned to Owner"]
-    : ["Petty Cash Top-Up - Abrar", "Owner transfer - Abrar", ...plans.map((plan) => plan.name), "Day Pass", "Weekly Pass", "Conference Room", "Miscellaneous"];
+    : ["Petty Cash Top-Up - Abrar", "Owner transfer - Abrar", "Miscellaneous"];
+  if (selected && !options.includes(selected)) options.unshift(selected);
   return options.map((option) => `
     <option value="${escapeAttr(option)}" ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>
   `).join("");
@@ -1673,6 +1746,7 @@ function ownerEntryOptions(type, selected) {
   const options = type === "expense"
     ? ownerExpenseCategories
     : ["Received From Staff", "Spaces Account Deposit", "Owner Balance Adjustment", "Miscellaneous Receiving"];
+  if (selected && !options.includes(selected)) options.unshift(selected);
   return options.map((option) => `
     <option value="${escapeAttr(option)}" ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>
   `).join("");
@@ -1721,21 +1795,22 @@ function renderOwnerLedger() {
 
   els.ownerSheet.innerHTML = filtered.length ? filtered.map((entry) => {
     const categoryValue = entry.entry_type === "expense" ? entry.category : entry.source;
+    const editable = !isSystemLedgerEntry(entry);
     return `
-      <tr data-owner-id="${entry.id}" class="${isInternalTransfer(entry) ? "linked-transfer" : ""}">
-        <td><input data-field="entryDate" type="date" value="${escapeAttr(entry.entry_date)}"></td>
+      <tr data-owner-id="${entry.id}" class="${[isInternalTransfer(entry) ? "linked-transfer" : "", editable ? "" : "locked"].filter(Boolean).join(" ")}">
+        <td><input data-field="entryDate" type="date" value="${escapeAttr(entry.entry_date)}" ${editable ? "" : "disabled"}></td>
         <td>
-          <select data-field="entryType">
+          <select data-field="entryType" ${editable ? "" : "disabled"}>
             <option value="expense" ${entry.entry_type === "expense" ? "selected" : ""}>Expense</option>
             <option value="receiving" ${entry.entry_type === "receiving" ? "selected" : ""}>Receiving</option>
           </select>
         </td>
-        <td><select data-field="categorySource">${ownerEntryOptions(entry.entry_type, categoryValue)}</select></td>
-        <td><select data-field="paymentSource">${paymentSourceOptions(entry.payment_source || "abrar_owner")}</select></td>
-        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}"></td>
-        <td><textarea data-field="notes" rows="1">${escapeHtml(entry.notes)}</textarea></td>
-        <td><input data-field="attachment" value="${escapeAttr(entry.attachment_note)}"></td>
-        <td><button class="tiny-button" data-action="save-owner-row" data-id="${entry.id}" type="button">Save</button></td>
+        <td><select data-field="categorySource" ${editable ? "" : "disabled"}>${ownerEntryOptions(entry.entry_type, categoryValue)}</select></td>
+        <td><select data-field="paymentSource" ${editable ? "" : "disabled"}>${paymentSourceOptions(entry.payment_source || "abrar_owner")}</select></td>
+        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
+        <td><textarea data-field="notes" rows="1" ${editable ? "" : "disabled"}>${escapeHtml(entry.notes)}</textarea></td>
+        <td><input data-field="attachment" value="${escapeAttr(entry.attachment_note)}" ${editable ? "" : "disabled"}></td>
+        <td>${editable ? `<button class="tiny-button" data-action="save-owner-row" data-id="${entry.id}" type="button">Save</button>` : `<span class="locked-note">System entry</span>`}</td>
       </tr>
     `;
   }).join("") : `<tr><td colspan="8">No owner ledger entries found for ${range.key}.</td></tr>`;
@@ -1790,32 +1865,6 @@ async function insertCashLedgerEntry(row) {
 
 async function insertOwnerLedgerEntry(row) {
   return insertRow("owner_ledger", row);
-}
-
-async function insertPaymentRow(row) {
-  try {
-    await supabaseRequest("/rest/v1/payments", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: row
-    });
-    return true;
-  } catch (error) {
-    if (!String(error.message || "").includes("payment_source")) throw error;
-    throw new Error("The payments table is missing payment_source. Run the latest Supabase schema patch before recording paid receipts.");
-  }
-}
-
-async function insertSalesReceipt(row) {
-  if (!salesReceiptsReady) {
-    throw new Error("Sales receipt table is not ready. Run the latest Supabase owner ledger patch before generating quick receipts.");
-  }
-  try {
-    return await insertRow("sales_receipts", row);
-  } catch (error) {
-    salesReceiptsReady = false;
-    throw new Error(`Could not save quick receipt record: ${error.message}`);
-  }
 }
 
 async function recordAudit(action, tableName, recordId, details = {}) {
@@ -1909,6 +1958,7 @@ async function saveOwnerRow(id) {
   const row = els.ownerSheet.querySelector(`tr[data-owner-id="${CSS.escape(id)}"]`);
   if (!row) return;
   const existing = ownerEntries.find((entry) => entry.id === id);
+  if (isSystemLedgerEntry(existing)) throw new Error("Receipt ledger rows are locked. Correct the payment or receipt instead.");
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
   const entryType = value("entryType");
   const categorySource = value("categorySource");
@@ -2035,7 +2085,7 @@ function renderPlans() {
     <article class="plan-card">
       <header>
         <div>
-          <strong>${plan.name}</strong>
+          <strong>${escapeHtml(plan.name)}</strong>
           <span>${plan.type} | ${plan.seats} person${plan.seats === 1 ? "" : "s"}</span>
         </div>
         <strong>${moneyOrRestricted(plan.price)}</strong>
@@ -2044,7 +2094,7 @@ function renderPlans() {
   `).join("") : `<p class="empty">Run the Supabase schema to load membership plans.</p>`;
 
   els.planSelect.innerHTML = plans.map((plan) => `
-    <option value="${plan.name}" data-id="${plan.id}" data-seats="${plan.seats}" data-price="${plan.price}">${plan.name}</option>
+    <option value="${escapeAttr(plan.name)}" data-id="${plan.id}" data-seats="${plan.seats}" data-price="${plan.price}">${escapeHtml(plan.name)}</option>
   `).join("");
 
   els.expenseCategory.innerHTML = expenseCategories.map((category) => `
@@ -2063,14 +2113,7 @@ function renderPlans() {
     els.ownerReceivingSource.innerHTML = ownerEntryOptions("receiving", "Received From Staff");
   }
 
-  const receivingSources = [
-    "Owner transfer - Abrar",
-    ...plans.map((plan) => plan.name),
-    "Day Pass",
-    "Weekly Pass",
-    "Conference Room",
-    "Miscellaneous"
-  ];
+  const receivingSources = ["Owner transfer - Abrar", "Miscellaneous balance adjustment"];
   els.receivingSource.innerHTML = receivingSources.map((source) => `
     <option value="${escapeAttr(source)}">${escapeHtml(source)}</option>
   `).join("");
@@ -2236,200 +2279,37 @@ function rateLabel(member) {
   return `${fmt.format(monthlyFee)}<span class="rate-note">Standard ${fmt.format(basePrice)} | Discount ${fmt.format(discount)}</span>`;
 }
 
-async function recordCollectedAmount({ amount, paymentSource, entryDate, source, personName, notes }) {
-  const row = {
-    entry_date: entryDate || isoToday(),
-    entry_type: "receiving",
-    category: null,
-    source,
-    person_name: personName || null,
-    amount: nonNegativeMoney(amount, 0),
-    notes: notes || null,
-    payment_source: paymentSource,
-    is_internal_transfer: false
-  };
-  if (paymentSource === "raza_manager" || paymentSource === "staff") {
-    try {
-      await insertCashLedgerEntry(row);
-    } catch (error) {
-      throw new Error(`Receipt was not added to staff cash balance: ${error.message}`);
-    }
-    return;
-  }
-  if (paymentSource === "spaces_account" || paymentSource === "abrar_owner") {
-    try {
-      await insertOwnerLedgerEntry({
-        entry_date: row.entry_date,
-        entry_type: "receiving",
-        category: null,
-        source,
-        payment_source: paymentSource,
-        amount: row.amount,
-        notes: row.notes,
-        is_internal_transfer: false
-      });
-    } catch (error) {
-      throw new Error(`Receipt was not added to owner ledger: ${error.message}`);
-    }
-  }
-}
-
-function isMissingRpcError(error, name) {
-  const text = [
-    error?.code,
-    error?.message,
-    error?.payload?.message,
-    error?.payload?.details
-  ].filter(Boolean).join(" ");
-  return text.includes("PGRST202")
-    || text.includes(`function public.${name}`)
-    || text.includes(`/${name}`)
-    || text.includes(`rpc/${name}`);
-}
-
-function shouldUsePaymentFallback(error, name) {
-  const text = [
-    error?.code,
-    error?.message,
-    error?.payload?.message,
-    error?.payload?.details,
-    error?.payload?.hint
-  ].filter(Boolean).join(" ").toLowerCase();
-  return isMissingRpcError(error, name)
-    || text.includes("undefined_table")
-    || text.includes("undefined_column")
-    || text.includes("relation \"public.")
-    || text.includes("column ")
-    || text.includes("schema cache")
-    || text.includes("member_plan_items")
-    || text.includes("owner_ledger")
-    || text.includes("cash_ledger")
-    || text.includes("payment_source");
-}
-
-async function requireCashCollectedLedger({ amount, paymentSource, entryDate, source, personName, notes }) {
-  if (!["raza_manager", "staff"].includes(paymentSource)) return;
-  await recordCollectedAmount({ amount, paymentSource, entryDate, source, personName, notes });
-}
-
-async function findPaidInvoiceForCycle(member) {
-  const rows = await selectRows(
-    "invoices",
-    `select=id,invoice_number,member_id,status,valid_till&member_id=eq.${encodeURIComponent(member.id)}&status=eq.paid&valid_till=eq.${encodeURIComponent(member.validTill)}&limit=1`
-  );
-  return rows[0] || null;
-}
-
-async function recordMembershipPaymentFallback(member, paymentSource) {
-  const localExistingPaid = invoices.find((invoice) =>
-    invoice.member_id === member.id
-    && invoice.status === "paid"
-    && invoice.valid_till === member.validTill
-  );
-  const existingPaid = localExistingPaid || await findPaidInvoiceForCycle(member);
-  if (existingPaid) {
-    return { invoice_number: existingPaid.invoice_number, invoice_id: existingPaid.id, reused: true };
-  }
-
-  const { amount, tax, total, standardPrice, discount } = invoicePricing(member);
-  const invoiceNumber = `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}-${String(member.validTill || isoToday()).replaceAll("-", "")}`;
-  const sameNumberRows = await selectRows("invoices", `select=id,invoice_number,status&invoice_number=eq.${encodeURIComponent(invoiceNumber)}&limit=1`);
-  if (sameNumberRows[0]?.status === "paid") {
-    return { invoice_number: sameNumberRows[0].invoice_number, invoice_id: sameNumberRows[0].id, reused: true };
-  }
-  if (sameNumberRows[0]) {
-    await deleteRows("invoices", `id=eq.${encodeURIComponent(sameNumberRows[0].id)}`);
-  }
-  const invoice = await insertRow("invoices", {
-    invoice_number: invoiceNumber,
-    member_id: member.id,
-    invoice_type: "membership",
-    issue_date: member.membershipFrom || isoToday(),
-    valid_till: member.validTill || member.renewalDate,
-    standard_amount: standardPrice,
-    discount_amount: discount,
-    subtotal_amount: amount,
-    tax_amount: tax,
-    total_amount: total,
-    status: "sent",
-    edit_note: null
-  });
-  try {
-    const lines = invoiceLines(member);
-    await supabaseRequest("/rest/v1/invoice_items", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: lines.map((line) => ({
-        invoice_id: invoice.id,
-        description: line.description,
-        quantity: positiveIntOr(line.quantity, 1),
-        unit_price: nonNegativeMoney(line.unitPrice, 0),
-        amount: nonNegativeMoney(line.amount, 0)
-      }))
-    });
-    await insertPaymentRow({
-      invoice_id: invoice.id,
-      member_id: member.id,
-      amount: total,
-      payment_method: "cash",
-      payment_source: paymentSource,
-      reference: invoiceNumber,
-      notes: member.plan
-    });
-    await requireCashCollectedLedger({
-      amount: total,
-      paymentSource,
-      entryDate: member.membershipFrom || isoToday(),
-      source: "Membership receipt",
-      personName: member.name,
-      notes: `${invoiceNumber} | ${member.plan}`
-    });
-    await patchRow("invoices", invoice.id, { status: "paid" });
-    await recordAudit("record_membership_payment_fallback", "payments", invoice.id, {
-      invoice_number: invoiceNumber,
-      member_id: member.id,
-      member_name: member.name,
-      amount: total,
-      payment_source: paymentSource,
-      valid_till: member.validTill
-    });
-  } catch (error) {
-    await deleteRows("invoices", `id=eq.${encodeURIComponent(invoice.id)}`).catch((cleanupError) => {
-      console.warn("Could not clean up partial fallback invoice", cleanupError);
-    });
-    throw error;
-  }
-  return { invoice_number: invoiceNumber, invoice_id: invoice.id };
-}
-
 async function markPaid(id, control = null) {
   const member = members.find((item) => item.id === id);
   if (!member) return;
-  const paymentSource = promptPaymentSource(`Payment source for ${member.name}`);
+  const paymentSource = await promptPaymentSource(`How was ${member.name}'s payment collected?`);
   if (!paymentSource) return;
+  const settlementAmount = nonNegativeMoney(member.editedInvoice?.total_amount ?? member.monthlyFee, 0);
   return withControlLock(control, async () => {
     setSyncStatus("Saving", "busy");
     let receiptRows;
     try {
       receiptRows = await callRpc("record_membership_payment", {
         p_member_id: member.id,
-        p_amount: nonNegativeMoney(member.monthlyFee, 0),
+        p_amount: settlementAmount,
         p_payment_source: paymentSource,
-        p_receipt_date: member.membershipFrom,
+        p_receipt_date: isoToday(),
         p_valid_till: member.validTill,
         p_note: member.plan
       });
     } catch (error) {
-      if (!shouldUsePaymentFallback(error, "record_membership_payment")) throw error;
-      console.warn("record_membership_payment RPC failed; using REST fallback", error);
-      receiptRows = await recordMembershipPaymentFallback(member, paymentSource);
+      throw new Error(`Payment could not be saved atomically. Apply the latest Supabase payment migration, then retry. ${error.message}`);
     }
     const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows;
     const invoiceNumber = receiptRow?.invoice_number || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
-    await loadData();
-    const updatedMember = members.find((item) => item.id === id) || member;
-    openInvoice(updatedMember, { mode: "receipt", invoiceId: invoiceNumber });
+    // Open the receipt right away; the receipt content is built from data we
+    // already have, so the full table refresh can happen in the background.
+    openInvoice({ ...member, paid: true }, { mode: "receipt", invoiceId: invoiceNumber });
     setReceiptSendStatus("Payment saved. Tap Share PDF to send the receipt through WhatsApp.", "success");
+    loadData().catch((error) => {
+      console.error(error);
+      setSyncStatus("Refresh failed", "error");
+    });
   }, {
     busyText: "Saving...",
     successTitle: "Receipt marked paid",
@@ -2479,6 +2359,7 @@ function openInvoice(member, override = {}) {
   const invoiceTitle = override.title || (override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership");
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
+  const documentStatus = override.status || (override.mode === "edited" || member.paid === false ? "DRAFT / UNPAID" : "PAID");
   const issuedDate = receiptDateFor(member, override);
   const issuedDateLabel = override.mode === "quick" ? "Receipt Date" : "Membership From";
   const validText = validityLabel(member, override);
@@ -2539,12 +2420,14 @@ function openInvoice(member, override = {}) {
       amount,
       tax,
       total,
-      noteRows
+      noteRows,
+      documentStatus
     }
   };
 
   els.receiptPreview.innerHTML = `
-    <div class="receipt-box">
+    <div class="receipt-box ${documentStatus === "PAID" ? "" : "receipt-unpaid"}">
+      <div class="receipt-status ${documentStatus === "PAID" ? "paid" : "unpaid"}">${documentStatus}</div>
       <div class="receipt-brand-row">
         <div>
           <img class="receipt-logo" src="assets/spaces-logo.svg" alt="Spaces logo">
@@ -2637,10 +2520,14 @@ function openInvoice(member, override = {}) {
       </footer>
     </div>
   `;
-  els.manualWhatsappReceipt.href = `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`;
-  els.manualWhatsappReceipt.hidden = true;
+  const clientWhatsapp = whatsappPhone(member.phone);
+  els.manualWhatsappReceipt.href = `https://wa.me/${clientWhatsapp}?text=${encodeURIComponent(message)}`;
+  els.manualWhatsappReceipt.hidden = !clientWhatsapp;
   setReceiptSendStatus("");
-  els.whatsappReceipt.textContent = "Share PDF";
+  els.whatsappReceipt.textContent = "Share on WhatsApp";
+  // Start building the PDF while the receipt is being reviewed so Share/Save
+  // respond instantly instead of waiting on the API round trip.
+  prefetchReceiptPdf();
   els.receiptDialog.showModal();
 }
 
@@ -2964,8 +2851,8 @@ function setReceiptSendStatus(message, type = "") {
   els.receiptSendStatus.className = `receipt-send-status${type ? ` ${type}` : ""}`;
 }
 
-async function receiptPdfFile() {
-  if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
+async function requestReceiptPdfFile(share) {
+  await ensureFreshSession();
   const response = await fetch("/api/receipt-pdf", {
     method: "POST",
     headers: {
@@ -2973,8 +2860,8 @@ async function receiptPdfFile() {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      fileName: currentReceiptShare.fileName,
-      receipt: currentReceiptShare.receipt
+      fileName: share.fileName,
+      receipt: share.receipt
     })
   });
   if (!response.ok) {
@@ -2982,7 +2869,26 @@ async function receiptPdfFile() {
     throw new Error(payload.error || "Could not create the receipt PDF.");
   }
   const blob = await response.blob();
-  return new File([blob], currentReceiptShare.fileName, { type: "application/pdf" });
+  return new File([blob], share.fileName, { type: "application/pdf" });
+}
+
+function prefetchReceiptPdf() {
+  const share = currentReceiptShare;
+  if (!share.receipt || share.pdfPromise) return share.pdfPromise;
+  const promise = requestReceiptPdfFile(share).catch((error) => {
+    // Clear the failed attempt so the next tap retries with a fresh request.
+    if (share.pdfPromise === promise) share.pdfPromise = null;
+    throw error;
+  });
+  share.pdfPromise = promise;
+  promise.catch(() => {});
+  return promise;
+}
+
+async function receiptPdfFile() {
+  const share = currentReceiptShare;
+  if (!share.receipt) throw new Error("No receipt is open.");
+  return share.pdfPromise || prefetchReceiptPdf();
 }
 
 function downloadFile(file) {
@@ -3001,6 +2907,7 @@ async function sendCurrentReceipt() {
   els.whatsappReceipt.textContent = "Preparing...";
   setReceiptSendStatus("Preparing the PDF receipt...", "busy");
 
+  const clientName = currentReceiptShare.receipt?.customerName || "the customer";
   try {
     const file = await receiptPdfFile();
     if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
@@ -3009,19 +2916,26 @@ async function sendCurrentReceipt() {
         text: currentReceiptShare.message,
         files: [file]
       });
-      setReceiptSendStatus("PDF ready. Choose WhatsApp in the share sheet and select the customer chat.", "success");
-      showToast("PDF ready to share", "Choose WhatsApp and send the attached receipt.");
+      setReceiptSendStatus(`PDF attached. Choose WhatsApp and pick ${clientName}'s chat to send it.`, "success");
+      showToast("PDF ready to share", `Choose WhatsApp and send it to ${clientName}.`);
       return { ok: true, shared: true };
     }
 
+    // No share sheet on this device (desktop): save the PDF and open the
+    // client's WhatsApp chat with the receipt message so only the attachment
+    // step is left.
     downloadFile(file);
-    els.manualWhatsappReceipt.hidden = false;
-    setReceiptSendStatus("PDF downloaded. Use Open WhatsApp for the message, then attach the downloaded PDF if needed.", "success");
-    showToast("PDF downloaded", "Attach the downloaded receipt in WhatsApp.");
+    if (!els.manualWhatsappReceipt.hidden) {
+      window.open(els.manualWhatsappReceipt.href, "_blank", "noopener,noreferrer");
+      setReceiptSendStatus(`PDF downloaded and ${clientName}'s chat opened. Attach the downloaded PDF and send.`, "success");
+      showToast("PDF downloaded", `Attach it in ${clientName}'s open WhatsApp chat.`);
+    } else {
+      setReceiptSendStatus("PDF downloaded. This record has no WhatsApp number, so share the file manually.", "success");
+      showToast("PDF downloaded", "No WhatsApp number on record for this receipt.");
+    }
     return { ok: true, downloaded: true };
   } catch (error) {
     console.warn("Receipt PDF share failed", error);
-    els.manualWhatsappReceipt.hidden = false;
     setReceiptSendStatus(`Could not prepare the PDF: ${error.message}`, "error");
     showToast("PDF share failed", error.message, "error");
     throw error;
@@ -3036,25 +2950,6 @@ async function sendCurrentReceipt() {
 async function shareReceiptToWhatsapp(event) {
   event.preventDefault();
   sendCurrentReceipt().catch(() => {});
-}
-
-async function shareReceiptManually(event) {
-  if (!navigator.share || !navigator.canShare) return;
-  event.preventDefault();
-  try {
-    const file = await receiptPdfFile();
-    if (navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        title: "Spaces Coworking receipt",
-        text: currentReceiptShare.message,
-        files: [file]
-      });
-      return;
-    }
-  } catch (error) {
-    console.warn("Manual receipt sharing failed", error);
-  }
-  window.open(els.manualWhatsappReceipt.href, "_blank", "noopener,noreferrer");
 }
 
 function openReceipt(member) {
@@ -3382,46 +3277,6 @@ function quickValidity(service, quantity) {
   };
 }
 
-async function recordQuickReceiptFallback({ receiptNumber, customer, service, quantity, amount, paymentMode, validity, note }) {
-  const row = await insertSalesReceipt({
-    receipt_number: receiptNumber,
-    customer_name: customer.name,
-    phone: customer.phone || null,
-    service_name: service.label,
-    quantity,
-    unit_rate: service.rate,
-    total_amount: amount,
-    payment_source: paymentMode,
-    receipt_date: validity.receiptDate,
-    valid_till: validity.validTill,
-    notes: note || null
-  });
-  try {
-    await requireCashCollectedLedger({
-      amount,
-      paymentSource: paymentMode,
-      entryDate: validity.receiptDate,
-      source: service.label,
-      personName: customer.name,
-      notes: [`${receiptNumber}`, note].filter(Boolean).join(" | ")
-    });
-    await recordAudit("record_quick_receipt_fallback", "sales_receipts", row.id, {
-      receipt_number: receiptNumber,
-      customer_name: customer.name,
-      service_name: service.label,
-      quantity,
-      amount,
-      payment_source: paymentMode
-    });
-  } catch (error) {
-    await deleteRows("sales_receipts", `id=eq.${encodeURIComponent(row.id)}`).catch((cleanupError) => {
-      console.warn("Could not clean up partial quick receipt", cleanupError);
-    });
-    throw error;
-  }
-  return row;
-}
-
 async function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
@@ -3450,9 +3305,7 @@ async function generateQuickInvoice() {
       p_notes: note || null
     });
   } catch (error) {
-    if (!shouldUsePaymentFallback(error, "record_quick_receipt")) throw error;
-    console.warn("record_quick_receipt RPC failed; using REST fallback", error);
-    await recordQuickReceiptFallback({ receiptNumber, customer, service, quantity, amount, paymentMode, validity, note });
+    throw new Error(`Receipt could not be saved atomically. Apply the latest Supabase accounting migration, then retry. ${error.message}`);
   }
   openInvoice({
     id: `quick-${Date.now()}`,

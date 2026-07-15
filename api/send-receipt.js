@@ -29,11 +29,24 @@ async function supabaseFetch(path, token, options = {}) {
   return payload;
 }
 
+function tokenUserId(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] || "", "base64url").toString("utf8"));
+    return payload.sub || "";
+  } catch {
+    return "";
+  }
+}
+
 async function authenticatedStaff(token) {
   if (!token) throw new Error("Staff login required.");
-  const user = await supabaseFetch("/auth/v1/user", token);
+  // The user id comes from the JWT payload; the staff_profiles query below is
+  // authenticated with that same token, so PostgREST rejects forged or expired
+  // tokens and RLS only returns rows the caller is allowed to see.
+  const userId = tokenUserId(token);
+  if (!userId) throw new Error("Staff login required.");
   const rows = await supabaseFetch(
-    `/rest/v1/staff_profiles?select=*&user_id=eq.${encodeURIComponent(user.id)}&active=eq.true`,
+    `/rest/v1/staff_profiles?select=*&user_id=eq.${encodeURIComponent(userId)}&active=eq.true&limit=1`,
     token
   );
   if (!rows?.length) throw new Error("This login is not an active Spaces staff account.");

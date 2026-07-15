@@ -21,6 +21,17 @@ Option A: Supabase SQL Editor
 3. Paste the contents of `supabase/schema.sql`.
 4. Run it.
 
+For an existing live database, apply numbered files in `supabase/migrations/`
+in filename order. The current accounting authority is:
+
+```text
+supabase/migrations/20260715_accounting_integrity.sql
+```
+
+It replaces both payment RPC definitions, adds structural ledger references,
+settles edited invoices atomically, and tightens payment/invoice history rules.
+Do not use the older REST payment fallbacks after this migration is applied.
+
 ## Staff Login
 
 The live web app signs staff in through Supabase Auth.

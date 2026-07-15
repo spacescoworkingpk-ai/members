@@ -9,6 +9,17 @@ function clean(value, limit = 120) {
   return String(value || "").replace(/[\r\n]/g, " ").slice(0, limit);
 }
 
+function cleanMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const safe = {};
+  Object.entries(value).slice(0, 12).forEach(([key, item]) => {
+    const safeKey = clean(key, 40);
+    if (!safeKey) return;
+    if (["string", "number", "boolean"].includes(typeof item)) safe[safeKey] = clean(item, 120);
+  });
+  return safe;
+}
+
 export default async function handler(request, response) {
   if (request.method !== "POST") return response.status(405).json({ error: "Method not allowed" });
   const body = request.body || {};
@@ -24,7 +35,7 @@ export default async function handler(request, response) {
     section: clean(body.section, 80) || null,
     referrer_host: clean(body.referrerHost, 120) || null,
     device_type: ["mobile", "tablet", "desktop"].includes(body.deviceType) ? body.deviceType : "desktop",
-    metadata: typeof body.metadata === "object" && body.metadata ? body.metadata : {}
+    metadata: cleanMetadata(body.metadata)
   };
   try {
     const result = await fetch(`${supabaseUrl}/rest/v1/website_events`, {
