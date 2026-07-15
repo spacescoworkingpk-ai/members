@@ -3591,7 +3591,6 @@ els.downloadReceipt.addEventListener("click", async () => {
 });
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
-els.manualWhatsappReceipt.addEventListener("click", shareReceiptManually);
 els.resetMemberForm.addEventListener("click", () => {
   window.setTimeout(() => {
     setDefaultDates();
