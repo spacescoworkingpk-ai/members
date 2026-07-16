@@ -2,7 +2,8 @@ const allowedEvents = new Set([
   "page_view", "section_view", "whatsapp_visit", "plan_dedicated", "plan_personal",
   "plan_room", "room_visit", "brue_order", "meeting_booking", "maps", "brue_nav",
   "brue_footer", "visit_planner", "plan_enquiry", "visit_submit", "experience_slide",
-  "membership_expand", "amenity_view", "visit_form_complete"
+  "membership_expand", "amenity_view", "visit_form_complete",
+  "guide_open", "guide_answer", "guide_whatsapp"
 ]);
 
 function clean(value, limit = 120) {

@@ -213,6 +213,28 @@
         <button class="button ink-button" type="submit" data-track="visit_submit">Continue on WhatsApp</button>
       </form>
     </dialog>
+
+    <aside class="space-guide" id="space-guide" role="dialog" aria-modal="false" aria-labelledby="space-guide-title" hidden>
+      <header class="space-guide-header">
+        <div class="guide-mark" aria-hidden="true">S</div>
+        <div>
+          <strong id="space-guide-title">Spaces guide</strong>
+          <span><i></i> Here to help</span>
+        </div>
+        <button class="guide-close" type="button" aria-label="Close Spaces guide">×</button>
+      </header>
+      <div class="guide-messages" aria-live="polite" aria-label="Conversation with Spaces guide"></div>
+      <div class="guide-replies" aria-label="Suggested replies"></div>
+      <form class="guide-form">
+        <label class="sr-only" for="guide-question">Ask about Spaces plans</label>
+        <input id="guide-question" name="question" autocomplete="off" placeholder="Ask about plans, rates or amenities">
+        <button type="submit" aria-label="Send question">→</button>
+      </form>
+    </aside>
+    <button class="guide-launcher" type="button" aria-expanded="false" aria-controls="space-guide">
+      <span class="guide-launcher-icon" aria-hidden="true">S</span>
+      <span>Find my plan</span>
+    </button>
     <a class="mobile-whatsapp" data-track="whatsapp_visit" href="https://wa.me/923173337756?text=Hi%20Spaces%2C%20I%27d%20like%20to%20arrange%20a%20visit." target="_blank" rel="noreferrer">WhatsApp Spaces</a>
     <script src="website.js"></script>
   </body>
