@@ -572,97 +572,82 @@ button {
   max-width: 620px;
 }
 
-.membership-list {
-  margin-top: clamp(38px, 5vw, 58px);
-  border-top: 1px solid var(--hairline);
-}
-
-.membership-list article {
-  border-bottom: 1px solid var(--hairline);
-}
-
-.membership-summary {
+.plan-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) auto auto;
-  align-items: baseline;
-  gap: clamp(14px, 3vw, 40px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(20px, 2.6vw, 32px);
+  margin-top: clamp(38px, 5vw, 58px);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: transform 320ms var(--ease), box-shadow 320ms var(--ease);
+}
+
+.plan-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 50px rgba(31, 38, 42, 0.1);
+}
+
+.plan-photo {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--cloud);
+}
+
+.plan-photo img {
   width: 100%;
-  padding: clamp(24px, 3vw, 34px) 4px;
-  border: 0;
-  background: none;
-  text-align: left;
-  color: var(--ink);
-  transition: background-color 240ms var(--ease);
+  height: 100%;
+  object-fit: cover;
+  transition: transform 700ms var(--ease);
 }
 
-.membership-summary:hover {
-  background: rgba(233, 238, 236, 0.55);
+.plan-card:hover .plan-photo img {
+  transform: scale(1.04);
 }
 
-.membership-summary b {
-  font-family: "Newsreader", Georgia, serif;
+.plan-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 12px;
+  padding: clamp(22px, 2.4vw, 30px);
+}
+
+.plan-body h3 {
+  font-size: clamp(24px, 2.2vw, 30px);
   font-weight: 500;
-  font-size: clamp(22px, 2.2vw, 30px);
-  letter-spacing: -0.01em;
 }
 
-.membership-summary em {
-  font-style: normal;
-  font-size: 15px;
+.plan-tagline {
   color: var(--slate);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
-.membership-summary strong {
+.plan-price {
+  margin-top: auto;
+  padding-top: 10px;
   font-family: "Newsreader", Georgia, serif;
   font-weight: 500;
-  font-size: clamp(19px, 1.9vw, 25px);
-  white-space: nowrap;
+  font-size: clamp(22px, 2vw, 27px);
+  color: var(--ink);
 }
 
-.membership-summary strong small {
+.plan-price small {
   font-family: "Albert Sans", system-ui, sans-serif;
   font-size: 13px;
   font-weight: 400;
   color: var(--slate);
 }
 
-.membership-summary i {
-  font-style: normal;
-  font-size: 24px;
-  font-weight: 300;
-  color: var(--spruce);
-  line-height: 1;
-  transition: transform 320ms var(--ease);
-}
-
-.membership-summary[aria-expanded="true"] i {
-  transform: rotate(45deg);
-}
-
-.membership-details {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 380ms var(--ease);
-}
-
-.membership-details .membership-details-body {
-  overflow: hidden;
-  min-height: 0;
-}
-
-.membership-summary[aria-expanded="true"] + .membership-details {
-  grid-template-rows: 1fr;
-}
-
-.membership-details p {
-  color: var(--slate);
-  padding-bottom: 6px;
-  max-width: 62ch;
-}
-
-.membership-details a {
-  display: inline-block;
-  margin: 4px 0 28px;
+.plan-cta {
+  width: max-content;
   font-weight: 500;
   border-bottom: 1px solid rgba(53, 96, 107, 0.35);
   padding-bottom: 2px;
@@ -837,6 +822,23 @@ button {
   margin-top: 16px;
   color: var(--slate);
   line-height: 1.8;
+}
+
+.entrance-note {
+  margin-top: 30px;
+  max-width: 230px;
+}
+
+.entrance-note img {
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+}
+
+.entrance-note figcaption {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--slate);
 }
 
 .contact-list {
@@ -1048,12 +1050,9 @@ body.dialog-open {
     align-items: flex-start;
   }
 
-  .membership-summary {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .membership-summary em {
-    display: none;
+  .plan-grid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
   }
 }
 
@@ -1103,24 +1102,6 @@ body.dialog-open {
 
   .hero-inner h1 {
     font-size: clamp(38px, 11vw, 52px);
-  }
-
-  .membership-summary {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    position: relative;
-    padding-right: 44px;
-  }
-
-  .membership-summary i {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-  }
-
-  .membership-summary[aria-expanded="true"] i {
-    transform: translateY(-50%) rotate(45deg);
   }
 
   footer {
