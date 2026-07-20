@@ -23,9 +23,24 @@ test("membership collection settles the edited same-cycle amount on the actual d
 });
 
 test("payment and quick receipt writes require atomic RPCs", () => {
+  // No non-atomic REST fallbacks may creep back in.
   assert.doesNotMatch(app, /await recordMembershipPaymentFallback\(/);
   assert.doesNotMatch(app, /await recordQuickReceiptFallback\(/);
-  assert.match(app, /could not be saved atomically/g);
+  // Both money paths call the RPC and report failures through one helper that
+  // tells staff what to do and that nothing was charged.
+  assert.match(app, /callRpc\("record_membership_payment"/);
+  assert.match(app, /callRpc\("record_quick_receipt"/);
+  assert.equal((app.match(/describeWriteFailure\(error, "(payment|receipt)"\)/g) || []).length, 2);
+  assert.match(app, /safe to retry/);
+});
+
+test("a database missing the migration is diagnosed, not blamed on the user", () => {
+  // PGRST202 (missing function) and 42703/42P01 (missing column/table) are the
+  // real-world symptoms of an un-migrated database; both must name the fix.
+  assert.match(app, /PGRST202/);
+  assert.match(app, /42703/);
+  assert.match(app, /20260721_production_catchup\.sql/);
+  assert.match(app, /async function checkDatabaseHealth/);
 });
 
 test("canonical RPCs require active staff and structural ledger references", () => {

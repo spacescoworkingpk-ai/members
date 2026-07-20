@@ -235,7 +235,9 @@ begin
   if coalesce(p_quantity, 0) <= 0 or coalesce(p_unit_rate, 0) <= 0 or coalesce(p_total_amount, 0) <= 0 then raise exception 'Receipt amount must be greater than zero'; end if;
   perform pg_advisory_xact_lock(hashtext('quick:' || p_receipt_number));
 
-  select id into v_receipt_id from public.sales_receipts where receipt_number = p_receipt_number;
+  -- Qualify the column: receipt_number is also an OUT parameter of this
+  -- function, so an unqualified reference is ambiguous at runtime.
+  select id into v_receipt_id from public.sales_receipts where sales_receipts.receipt_number = p_receipt_number;
   if v_receipt_id is not null then return query select v_receipt_id, p_receipt_number; return; end if;
 
   insert into public.sales_receipts (

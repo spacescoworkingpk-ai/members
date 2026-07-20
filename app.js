@@ -113,6 +113,7 @@ let staffProfile = null;
 let session = loadSession();
 let lastAutoRefreshAt = 0;
 let memberFormPlanLines = [];
+let healthChecked = false;
 let currentReceiptShare = {
   message: "",
   fileName: "spaces-receipt.pdf",
@@ -490,6 +491,10 @@ async function loadData() {
   syncQuickInvoiceFields();
   render();
   setSyncStatus("Live", "ok");
+  if (!healthChecked) {
+    healthChecked = true;
+    checkDatabaseHealth();
+  }
 }
 
 function mapPlan(row) {
@@ -1142,6 +1147,45 @@ function renderMembers() {
     : "No members yet. Use Add member to register the first one.";
   els.membersTable.innerHTML = rows || `<tr><td colspan="8">${emptyText}</td></tr>`;
   els.memberCount.textContent = `${visible.length} active member${visible.length === 1 ? "" : "s"} shown`;
+}
+
+const CATCHUP_MIGRATION = "supabase/migrations/20260721_production_catchup.sql";
+
+// Turns a Supabase/PostgREST failure into something a staff member can act on.
+// The common cause is a database that has not had the latest migration run,
+// which otherwise surfaces as an opaque PGRST202/42703 code.
+function describeWriteFailure(error, what) {
+  const text = [error?.code, error?.message, error?.payload?.message, error?.payload?.details]
+    .filter(Boolean).join(" ");
+  if (/PGRST202|Could not find the function|schema cache/i.test(text)) {
+    return `This database is missing the ${what} function, so nothing was saved. Ask Abrar to run ${CATCHUP_MIGRATION} in the Supabase SQL editor, then try again.`;
+  }
+  if (/does not exist|42703|42P01/i.test(text)) {
+    return `This database is missing a table or column the ${what} needs, so nothing was saved. Ask Abrar to run ${CATCHUP_MIGRATION} in the Supabase SQL editor. (${error?.message || "unknown column"})`;
+  }
+  if (/Active staff login required/i.test(text)) {
+    return "This login is not an active staff account, so the " + what + " was not saved. Ask Abrar to activate it in staff settings.";
+  }
+  if (/row-level security|permission denied|42501/i.test(text)) {
+    return `Your login is not allowed to save this ${what}. Ask Abrar to check staff permissions.`;
+  }
+  return `The ${what} was not saved: ${error?.message || "unknown error"}. Nothing was charged, so it is safe to retry.`;
+}
+
+// Warn the owner once per session if the database is behind the app, instead
+// of letting them discover it when a customer is standing at the desk.
+async function checkDatabaseHealth() {
+  if (!canSeeRevenue()) return;
+  const missing = [];
+  if (!ownerLedgerReady) missing.push("business ledger");
+  if (!salesReceiptsReady) missing.push("quick receipts");
+  if (!auditLogReady) missing.push("audit log");
+  if (!missing.length) return;
+  showToast(
+    "Database needs an update",
+    `${missing.join(", ")} unavailable. Run ${CATCHUP_MIGRATION} in Supabase, then refresh.`,
+    "error"
+  );
 }
 
 function anyDialogOpen() {
@@ -2362,7 +2406,7 @@ async function markPaid(id, control = null) {
         p_note: member.plan
       });
     } catch (error) {
-      throw new Error(`Payment could not be saved atomically. Apply the latest Supabase payment migration, then retry. ${error.message}`);
+      throw new Error(describeWriteFailure(error, "payment"));
     }
     const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows;
     const invoiceNumber = receiptRow?.invoice_number || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
@@ -3397,7 +3441,7 @@ async function generateQuickInvoice() {
       p_notes: note || null
     });
   } catch (error) {
-    throw new Error(`Receipt could not be saved atomically. Apply the latest Supabase accounting migration, then retry. ${error.message}`);
+    throw new Error(describeWriteFailure(error, "receipt"));
   }
   openInvoice({
     id: `quick-${Date.now()}`,
