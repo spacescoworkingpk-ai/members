@@ -52,3 +52,16 @@ test("unpaid receipt PDFs are visibly marked", () => {
   assert.match(app, /DRAFT \/ UNPAID/);
   assert.match(whatsapp, /UNPAID/);
 });
+
+test("destructive member actions use in-app confirmation, not browser popups", () => {
+  // The member spreadsheet and its confusing multi-save flow are gone.
+  assert.doesNotMatch(app, /saveChangedSheetRows/);
+  assert.doesNotMatch(app, /renderSheetEditor/);
+  assert.doesNotMatch(app, /window\.prompt/);
+  // Archive/restore/collect flows go through the shared in-app confirm dialog.
+  assert.match(app, /openMemberEditor/);
+  assert.match(app, /async function restoreMember/);
+  assert.ok((app.match(/confirmAction\(/g) || []).length >= 3, "confirmAction should back multiple flows");
+  // The only native confirm left is the defensive fallback inside confirmAction.
+  assert.equal((app.match(/window\.confirm\(/g) || []).length, 1);
+});

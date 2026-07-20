@@ -62,7 +62,7 @@
             <button class="ghost-button" id="logoutButton" type="button">Logout</button>
             <a class="ghost-button" href="#receipts">Quick invoice</a>
             <a class="ghost-button" href="#cash-accounting">Staff spending</a>
-            <a class="primary-button" href="#members">Add member</a>
+            <button class="primary-button" id="openAddMemberTop" type="button">Add member</button>
           </div>
         </header>
 
@@ -264,7 +264,7 @@
                   <th>Person</th>
                   <th>Amount</th>
                   <th>Notes</th>
-                  <th>Save</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="cashSheet"></tbody>
@@ -372,7 +372,7 @@
                   <th>Amount</th>
                   <th>Notes</th>
                   <th>Attachment</th>
-                  <th>Save</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="ownerSheet"></tbody>
@@ -406,100 +406,24 @@
           </div>
         </section>
 
-        <section class="panel member-form-panel page-section" id="member-form" data-page="members">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Staff member form</p>
-              <h2>Register a new member</h2>
-            </div>
-            <span class="form-hint">Plan rate can be discounted before saving.</span>
-          </div>
-          <form id="memberForm" class="staff-form">
-            <div class="form-grid">
-              <label>Name<input required name="name" placeholder="Member name"></label>
-              <label>Company<input name="company" placeholder="Company or team"></label>
-              <label>Phone<input required name="phone" placeholder="923001234567"></label>
-              <label>Email<input name="email" type="email" placeholder="name@example.com"></label>
-              <label>Plan<select required name="plan" id="planSelect"></select></label>
-              <label>Seats<input required name="seats" type="number" min="1" value="1"></label>
-              <label>Standard plan rate<input readonly name="basePlanPrice" type="number" min="0"></label>
-              <label>Offered monthly rate<input required name="monthlyFee" type="number" min="0" step="500"></label>
-              <label>Joining date<input required name="joiningDate" type="date"></label>
-              <label>Renewal date<input required name="renewalDate" type="date"></label>
-              <label>Deposit<input name="deposit" type="number" min="0" step="500" value="0"></label>
-              <label>Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
-              <label class="span-two">Notes<textarea name="notes" rows="3" placeholder="Access card, office number, custom terms"></textarea></label>
-            </div>
-            <div class="plan-lines-editor">
-              <div class="section-heading row">
-                <div>
-                  <p class="eyebrow">Plan bundle</p>
-                  <h2>Monthly invoice lines</h2>
-                </div>
-                <button class="ghost-button" id="addPlanLine" type="button">Add plan line</button>
-              </div>
-              <div class="plan-lines" id="memberPlanLines"></div>
-            </div>
-            <div class="rate-summary" id="rateSummary"></div>
-            <div class="modal-actions inline-actions">
-              <button class="ghost-button" id="resetMemberForm" type="reset">Clear</button>
-              <button class="primary-button" type="submit">Save member</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel sheet-panel page-section" id="member-sheet" data-page="members">
-          <div class="section-heading row">
-            <div>
-              <p class="eyebrow">Client sheet</p>
-              <h2>Edit current client records</h2>
-            </div>
-            <div class="sheet-actions">
-              <a class="ghost-button" href="#members">Add current client</a>
-              <button class="ghost-button" id="refreshMembers" type="button">Refresh</button>
-              <button class="primary-button" id="saveAllSheetRows" type="button">Save changes</button>
-            </div>
-          </div>
-          <div class="sheet-toolbar">
-            <label class="search">
-              <span>Filter sheet</span>
-              <input id="sheetSearch" type="search" placeholder="Name, phone, plan, notes">
-            </label>
-            <span class="sheet-message" id="sheetMessage">No pending edits</span>
-          </div>
-          <div class="sheet-wrap">
-            <table class="sheet-table member-sheet-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Company</th>
-                  <th>Phone</th>
-                  <th>Email</th>
-                  <th>Plan</th>
-                  <th>Plan bundle</th>
-                  <th>Seats</th>
-                  <th>Joining</th>
-                  <th>Renewal</th>
-                  <th>Standard</th>
-                  <th>Offered</th>
-                  <th>Deposit</th>
-                  <th>Discount reason</th>
-                  <th>Notes</th>
-                  <th>Status</th>
-                  <th>Save</th>
-                </tr>
-              </thead>
-              <tbody id="memberSheet"></tbody>
-            </table>
-          </div>
-        </section>
-
         <section class="content-grid page-section" id="members" data-page="members">
           <div class="panel wide">
             <div class="section-heading row">
               <div>
                 <p class="eyebrow">Member database</p>
-                <h2>Members and renewal dates</h2>
+                <h2>Members</h2>
+              </div>
+              <div class="sheet-actions">
+                <button class="ghost-button" id="refreshMembers" type="button">Refresh</button>
+                <button class="primary-button" id="openAddMember" type="button">Add member</button>
+              </div>
+            </div>
+            <div class="member-toolbar">
+              <div class="filter-chips" id="memberFilters" role="tablist" aria-label="Filter members">
+                <button class="chip active" data-filter="all" type="button" role="tab" aria-selected="true">All</button>
+                <button class="chip" data-filter="unpaid" type="button" role="tab" aria-selected="false">Unpaid</button>
+                <button class="chip" data-filter="due" type="button" role="tab" aria-selected="false">Due soon</button>
+                <button class="chip" data-filter="archived" type="button" role="tab" aria-selected="false">Archived</button>
               </div>
               <label class="search">
                 <span>Search</span>
@@ -523,8 +447,8 @@
                 <tbody id="membersTable"></tbody>
               </table>
             </div>
+            <p class="sheet-message" id="memberCount"></p>
           </div>
-
         </section>
 
         <section class="panel page-section" id="receipts" data-page="receipts">
@@ -572,6 +496,48 @@
       </main>
     </div>
 
+    <dialog id="addMemberDialog">
+      <form id="memberForm" class="staff-form" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">New member</p>
+            <h2>Register a member</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close" type="submit">x</button>
+        </div>
+        <div class="form-grid">
+          <label>Name<input required name="name" placeholder="Member name"></label>
+          <label>Company<input name="company" placeholder="Company or team"></label>
+          <label>Phone<input required name="phone" placeholder="923001234567"></label>
+          <label>Email<input name="email" type="email" placeholder="name@example.com"></label>
+          <label>Plan<select required name="plan" id="planSelect"></select></label>
+          <label>Seats<input required name="seats" type="number" min="1" value="1"></label>
+          <label class="owner-only">Standard plan rate<input readonly name="basePlanPrice" type="number" min="0"></label>
+          <label class="owner-only">Offered monthly rate<input name="monthlyFee" type="number" min="0" step="500"></label>
+          <label>Joining date<input required name="joiningDate" type="date"></label>
+          <label>First renewal<input readonly name="renewalDate" type="date"><span class="form-hint">Set automatically from joining date</span></label>
+          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="500" value="0"></label>
+          <label class="owner-only">Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
+          <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Access card, office number, custom terms"></textarea></label>
+        </div>
+        <div class="plan-lines-editor">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Plan bundle</p>
+              <h2>Monthly plan lines</h2>
+            </div>
+            <button class="ghost-button" id="addPlanLine" type="button">Add plan line</button>
+          </div>
+          <div class="plan-lines" id="memberPlanLines"></div>
+          <div class="rate-summary owner-only" id="rateSummary"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="resetMemberForm" value="cancel" type="submit">Cancel</button>
+          <button class="primary-button" value="save" type="submit">Save member</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="editInvoiceDialog">
       <form method="dialog" id="editInvoiceForm">
         <div class="modal-header">
@@ -596,6 +562,63 @@
           <button class="primary-button" value="default" type="submit">Preview edited invoice</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="memberEditDialog">
+      <form id="memberEditForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Edit member</p>
+            <h2 id="memberEditTitle">Member</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close" type="submit">x</button>
+        </div>
+        <div class="form-grid">
+          <label>Name<input required name="name"></label>
+          <label>Company<input name="company"></label>
+          <label>Phone<input required name="phone"></label>
+          <label>Email<input name="email" type="email"></label>
+          <label>Joining date<input required name="joiningDate" type="date"></label>
+          <label>Renewal date<input required name="renewalDate" type="date"></label>
+          <label>Status
+            <select name="status">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="cancelled">Archived</option>
+            </select>
+          </label>
+          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="500"></label>
+          <label class="owner-only span-two">Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
+          <label class="span-two">Notes<textarea name="notes" rows="2"></textarea></label>
+        </div>
+        <div class="plan-lines-editor">
+          <div class="section-heading row">
+            <div>
+              <p class="eyebrow">Plan bundle</p>
+              <h2>Monthly plan lines</h2>
+            </div>
+            <button class="ghost-button" id="editAddPlanLine" type="button">Add plan line</button>
+          </div>
+          <div class="plan-lines" id="editPlanLines"></div>
+          <div class="rate-summary owner-only" id="editRateSummary"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" value="cancel" type="submit">Cancel</button>
+          <button class="primary-button" value="save" type="submit">Save member</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirmDialog" class="confirm-dialog">
+      <div class="confirm-panel">
+        <p class="eyebrow">Please confirm</p>
+        <h2 id="confirmTitle">Are you sure?</h2>
+        <p class="confirm-message" id="confirmMessage"></p>
+        <div class="modal-actions">
+          <button class="ghost-button" id="confirmCancel" type="button">Cancel</button>
+          <button class="primary-button" id="confirmAccept" type="button">Confirm</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="statementDialog">

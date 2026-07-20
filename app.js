@@ -164,11 +164,23 @@ const els = {
   planBars: document.querySelector("#planBars"),
   planBarsTitle: document.querySelector("#planBarsTitle"),
   memberSearch: document.querySelector("#memberSearch"),
-  sheetSearch: document.querySelector("#sheetSearch"),
-  memberSheet: document.querySelector("#memberSheet"),
-  sheetMessage: document.querySelector("#sheetMessage"),
+  memberFilters: document.querySelector("#memberFilters"),
+  memberCount: document.querySelector("#memberCount"),
+  openAddMember: document.querySelector("#openAddMember"),
+  openAddMemberTop: document.querySelector("#openAddMemberTop"),
+  addMemberDialog: document.querySelector("#addMemberDialog"),
   refreshMembers: document.querySelector("#refreshMembers"),
-  saveAllSheetRows: document.querySelector("#saveAllSheetRows"),
+  memberEditDialog: document.querySelector("#memberEditDialog"),
+  memberEditForm: document.querySelector("#memberEditForm"),
+  memberEditTitle: document.querySelector("#memberEditTitle"),
+  editPlanLines: document.querySelector("#editPlanLines"),
+  editAddPlanLine: document.querySelector("#editAddPlanLine"),
+  editRateSummary: document.querySelector("#editRateSummary"),
+  confirmDialog: document.querySelector("#confirmDialog"),
+  confirmTitle: document.querySelector("#confirmTitle"),
+  confirmMessage: document.querySelector("#confirmMessage"),
+  confirmCancel: document.querySelector("#confirmCancel"),
+  confirmAccept: document.querySelector("#confirmAccept"),
   memberForm: document.querySelector("#memberForm"),
   resetMemberForm: document.querySelector("#resetMemberForm"),
   planSelect: document.querySelector("#planSelect"),
@@ -524,39 +536,6 @@ function planItemsLabel(items) {
   if (!items.length) return "No plan";
   if (items.length === 1) return items[0].planName;
   return items.map((item) => `${item.seats} ${item.planName}`).join(" + ");
-}
-
-function formatPlanLines(items) {
-  return (items || []).map((item) => [
-    item.planName,
-    item.seats,
-    item.standardRate,
-    item.offeredRate
-  ].join(" | ")).join("\n");
-}
-
-function parsePlanLines(text) {
-  return String(text || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      const [planNameRaw, seatsRaw, standardRaw, offeredRaw] = line.split("|").map((part) => part?.trim());
-      const planName = planNameRaw || "";
-      const plan = plans.find((item) => item.name.toLowerCase() === planName.toLowerCase());
-      const seats = positiveIntOr(seatsRaw || plan?.seats, 1);
-      const standardRate = nonNegativeMoney(standardRaw || plan?.price, 0);
-      const offeredRate = nonNegativeMoney(offeredRaw || standardRate, standardRate);
-      return {
-        planId: plan?.id || null,
-        planName: plan?.name || planName,
-        category: plan?.category || inferPlanCategory(planName),
-        seats,
-        standardRate,
-        offeredRate,
-        sortOrder: index
-      };
-    });
 }
 
 function serializePlanLineForDb(item, memberId, index) {
@@ -990,7 +969,6 @@ function render() {
   showActivePage();
   renderMetrics();
   renderMembers();
-  renderSheetEditor();
   renderReceipts();
   renderLedger();
   renderBars();
@@ -1063,23 +1041,83 @@ function renderMetrics() {
   }
 }
 
+let memberFilter = "all";
+
+function memberMatchesSearch(member, query) {
+  if (!query) return true;
+  const lineText = (member.planItems || []).map((item) => `${item.planName} ${item.offeredRate}`).join(" ");
+  return `${member.name} ${member.company || ""} ${member.phone} ${member.email || ""} ${member.plan} ${lineText} ${member.status}`.toLowerCase().includes(query);
+}
+
+function activeMemberRow(member) {
+  const state = paymentState(member);
+  const lineSummary = (member.planItems || []).map((item) => `${item.seats} ${item.planName}${canSeeRevenue() ? ` @ ${fmt.format(item.offeredRate)}` : ""}`).join(" | ");
+  return `
+    <tr>
+      <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
+      <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span></td>
+      <td><strong>${escapeHtml(member.plan)}</strong><span>${escapeHtml(lineSummary || `${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}`)}</span></td>
+      <td>${formatDate(member.joiningDate)}</td>
+      <td>${formatDate(member.validTill)}</td>
+      <td>${canSeeRevenue() ? rateLabel(member) : "Restricted"}</td>
+      <td><span class="status ${state}">${stateLabel(state)}</span></td>
+      <td>
+        ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
+        <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
+        <button class="tiny-button" data-action="history" data-id="${member.id}" type="button">History</button>
+        <button class="tiny-button" data-action="edit-member" data-id="${member.id}" type="button">Edit</button>
+        ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Discount invoice</button>` : ""}
+        <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
+      </td>
+    </tr>
+  `;
+}
+
 function renderMembers() {
   const query = els.memberSearch.value.trim().toLowerCase();
-  const filtered = members.filter((member) => {
-    const lineText = (member.planItems || []).map((item) => `${item.planName} ${item.offeredRate}`).join(" ");
-    const haystack = `${member.name} ${member.company || ""} ${member.phone} ${member.plan} ${lineText}`.toLowerCase();
-    return haystack.includes(query);
-  });
+
+  if (memberFilter === "archived") {
+    const archived = memberRecords
+      .filter((member) => member.status !== "active")
+      .filter((member) => memberMatchesSearch(member, query))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    els.membersTable.innerHTML = archived.length ? archived.map((member) => `
+      <tr class="archived-row">
+        <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
+        <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span></td>
+        <td><strong>${escapeHtml(member.plan)}</strong><span>${Number(member.seats) || 1} seat${Number(member.seats) === 1 ? "" : "s"}</span></td>
+        <td>${formatDate(member.joiningDate)}</td>
+        <td>${formatDate(member.validTill)}</td>
+        <td>${canSeeRevenue() ? rateLabel(member) : "Restricted"}</td>
+        <td><span class="status archived">${member.status === "paused" ? "Paused" : "Archived"}</span></td>
+        <td>
+          <button class="tiny-button" data-action="history" data-id="${member.id}" type="button">History</button>
+          <button class="tiny-button" data-action="edit-member" data-id="${member.id}" type="button">Edit</button>
+          <button class="tiny-button secondary" data-action="restore-member" data-id="${member.id}" type="button">Restore</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="8">No archived members${query ? " match this search" : ""}.</td></tr>`;
+    els.memberCount.textContent = `${archived.length} archived member${archived.length === 1 ? "" : "s"}`;
+    return;
+  }
+
+  const visible = members
+    .filter((member) => memberMatchesSearch(member, query))
+    .filter((member) => {
+      if (memberFilter === "unpaid") return !member.paid;
+      if (memberFilter === "due") return !member.paid && daysUntil(member.validTill) <= 7;
+      return true;
+    });
 
   const groups = [
-    { key: "rooms", label: "Rooms", detail: "Private rooms, cubicle, executive room" },
-    { key: "flexible", label: "Desks - Flexible Desk", detail: "Flexible desk members" },
-    { key: "dedicated", label: "Desks - Dedicated Desk", detail: "Dedicated desk members" },
-    { key: "personal", label: "Desks - Personal Desk", detail: "Personal desk members" }
+    { key: "rooms", label: "Rooms" },
+    { key: "flexible", label: "Flexible Desk" },
+    { key: "dedicated", label: "Dedicated Desk" },
+    { key: "personal", label: "Personal Desk" }
   ];
 
   const rows = groups.map((group) => {
-    const groupMembers = filtered
+    const groupMembers = visible
       .filter((member) => memberHasCategory(member, group.key))
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!groupMembers.length) return "";
@@ -1093,108 +1131,51 @@ function renderMembers() {
           <span>${groupMembers.length} member${groupMembers.length === 1 ? "" : "s"} | ${occupied} seat${occupied === 1 ? "" : "s"}${canSeeRevenue() ? ` | ${fmt.format(revenue)}` : ""}</span>
         </td>
       </tr>
-      ${groupMembers.map((member) => {
-        const state = paymentState(member);
-        const lineSummary = (member.planItems || []).map((item) => `${item.seats} ${item.planName}${canSeeRevenue() ? ` @ ${fmt.format(item.offeredRate)}` : ""}`).join(" | ");
-        return `
-      <tr>
-        <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
-        <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span></td>
-        <td><strong>${escapeHtml(member.plan)}</strong><span>${escapeHtml(lineSummary || `${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}`)}</span></td>
-        <td>${formatDate(member.joiningDate)}</td>
-        <td>${formatDate(member.validTill)}</td>
-        <td>${canSeeRevenue() ? rateLabel(member) : "Restricted"}</td>
-        <td><span class="status ${state}">${stateLabel(state)}</span></td>
-        <td>
-          <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
-          <button class="tiny-button" data-action="history" data-id="${member.id}" type="button">History</button>
-          ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>` : ""}
-          ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
-          <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
-        </td>
-      </tr>
-    `;
-      }).join("")}
+      ${groupMembers.map(activeMemberRow).join("")}
     `;
   }).join("");
 
-  els.membersTable.innerHTML = rows || `<tr><td colspan="8">No members found.</td></tr>`;
+  const emptyText = query
+    ? "No members match this search."
+    : memberFilter === "unpaid" ? "No unpaid members right now."
+    : memberFilter === "due" ? "No renewals due in the next 7 days."
+    : "No members yet. Use Add member to register the first one.";
+  els.membersTable.innerHTML = rows || `<tr><td colspan="8">${emptyText}</td></tr>`;
+  els.memberCount.textContent = `${visible.length} active member${visible.length === 1 ? "" : "s"} shown`;
 }
 
-function renderSheetEditor() {
-  const query = els.sheetSearch.value.trim().toLowerCase();
-  const filtered = memberRecords.filter((member) => {
-    const haystack = [
-      member.name,
-      member.company,
-      member.phone,
-      member.email,
-      member.plan,
-      member.discountReason,
-      member.notes,
-      member.status
-    ].join(" ").toLowerCase();
-    return haystack.includes(query);
+function anyDialogOpen() {
+  return [
+    els.memberEditDialog,
+    els.addMemberDialog,
+    els.confirmDialog,
+    els.receiptDialog,
+    els.editInvoiceDialog,
+    els.statementDialog,
+    els.paymentSourceDialog
+  ].some((dialog) => dialog?.open);
+}
+
+function confirmAction({ title, message, confirmLabel = "Confirm", danger = false }) {
+  return new Promise((resolve) => {
+    const dialog = els.confirmDialog;
+    if (!dialog) return resolve(window.confirm(`${title}\n\n${message}`));
+    els.confirmTitle.textContent = title;
+    els.confirmMessage.textContent = message;
+    els.confirmAccept.textContent = confirmLabel;
+    els.confirmAccept.classList.toggle("danger", danger);
+    const finish = (value) => {
+      dialog.close();
+      resolve(value);
+    };
+    els.confirmAccept.onclick = () => finish(true);
+    els.confirmCancel.onclick = () => finish(false);
+    dialog.oncancel = (event) => {
+      event.preventDefault();
+      finish(false);
+    };
+    dialog.showModal();
   });
-
-  els.memberSheet.innerHTML = filtered.length ? filtered.map((member) => `
-    <tr data-member-id="${member.id}">
-      <td><input required data-field="name" value="${escapeAttr(member.name)}"></td>
-      <td><input data-field="company" value="${escapeAttr(member.company)}"></td>
-      <td><input required data-field="phone" value="${escapeAttr(member.phone)}"></td>
-      <td><input data-field="email" type="email" value="${escapeAttr(member.email)}"></td>
-      <td>
-        <select required data-field="planId">
-          ${plans.map((plan) => `
-            <option value="${plan.id}" data-name="${escapeAttr(plan.name)}" data-seats="${plan.seats}" data-price="${plan.price}" ${plan.id === member.planId ? "selected" : ""}>${escapeHtml(plan.name)}</option>
-          `).join("")}
-        </select>
-      </td>
-      <td>${canSeeRevenue()
-        ? `<textarea class="sheet-plan-lines" data-field="planLines" rows="3" placeholder="Plan | seats | standard | offered">${escapeHtml(formatPlanLines(member.planItems))}</textarea>`
-        : `<textarea class="sheet-plan-lines" disabled rows="3">Restricted</textarea>`}</td>
-      <td><input required data-field="seats" type="number" min="1" value="${Number(member.seats || 1)}"></td>
-      <td><input required data-field="joiningDate" type="date" value="${escapeAttr(member.joiningDate)}"></td>
-      <td><input required data-field="renewalDate" type="date" value="${escapeAttr(member.renewalDate)}"></td>
-      <td>${canSeeRevenue() ? `<input required data-field="basePlanPrice" type="number" min="0" step="500" value="${Number(member.basePlanPrice || 0)}">` : `<input disabled value="Restricted">`}</td>
-      <td>${canSeeRevenue() ? `<input required data-field="monthlyFee" type="number" min="0" step="500" value="${Number(member.monthlyFee || 0)}">` : `<input disabled value="Restricted">`}</td>
-      <td>${canSeeRevenue() ? `<input data-field="deposit" type="number" min="0" step="500" value="${Number(member.deposit || 0)}">` : `<input disabled value="Restricted">`}</td>
-      <td>${canSeeRevenue() ? `<input data-field="discountReason" value="${escapeAttr(member.discountReason)}">` : `<input disabled value="Restricted">`}</td>
-      <td><textarea data-field="notes" rows="1">${escapeHtml(member.notes)}</textarea></td>
-      <td>
-        <select data-field="status">
-          <option value="active" ${member.status === "active" ? "selected" : ""}>Active</option>
-          <option value="paused" ${member.status === "paused" ? "selected" : ""}>Paused</option>
-          <option value="cancelled" ${member.status === "cancelled" ? "selected" : ""}>Cancelled</option>
-        </select>
-      </td>
-      <td>
-        <button class="tiny-button" data-action="save-member-row" data-id="${member.id}" type="button">Save</button>
-        <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
-      </td>
-    </tr>
-  `).join("") : `<tr><td colspan="16">No records found.</td></tr>`;
-  updateSheetMessage();
-}
-
-function markSheetRowDirty(row) {
-  row.classList.add("dirty");
-  updateSheetMessage();
-}
-
-function updateSheetMessage(message) {
-  if (message) {
-    els.sheetMessage.textContent = message;
-    return;
-  }
-  const dirtyCount = els.memberSheet.querySelectorAll("tr.dirty").length;
-  els.sheetMessage.textContent = dirtyCount
-    ? `${dirtyCount} unsaved row${dirtyCount === 1 ? "" : "s"}`
-    : "No pending edits";
-}
-
-function hasUnsavedSheetChanges() {
-  return Boolean(els.memberSheet?.querySelector("tr.dirty"));
 }
 
 function markLedgerRowDirty(row, messageElement, defaultMessage) {
@@ -1208,7 +1189,7 @@ function hasUnsavedLedgerChanges() {
 }
 
 async function maybeRefreshData(reason = "auto") {
-  if (!session?.access_token || els.appShell.hidden || hasUnsavedSheetChanges() || hasUnsavedLedgerChanges()) return;
+  if (!session?.access_token || els.appShell.hidden || anyDialogOpen() || hasUnsavedLedgerChanges()) return;
   const now = Date.now();
   if (reason !== "manual" && now - lastAutoRefreshAt < 60000) return;
   lastAutoRefreshAt = now;
@@ -1220,114 +1201,173 @@ async function maybeRefreshData(reason = "auto") {
   }
 }
 
-async function saveSheetRow(id) {
-  const row = els.memberSheet.querySelector(`tr[data-member-id="${CSS.escape(id)}"]`);
-  if (!row) return;
-  const planSelect = row.querySelector('[data-field="planId"]');
-  const selectedPlan = plans.find((plan) => plan.id === planSelect.value);
-  const existingMember = memberRecords.find((member) => member.id === id);
-  const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
-  const editedPlanLines = canSeeRevenue()
-    ? parsePlanLines(value("planLines") || "")
-    : existingMember?.planItems || [];
-  const primaryPlanLine = editedPlanLines[0] || {
-    planId: selectedPlan?.id || null,
-    planName: selectedPlan?.name || planSelect.selectedOptions[0]?.dataset.name || value("plan"),
-    category: selectedPlan?.category || inferPlanCategory(selectedPlan?.name),
-    seats: positiveIntOr(value("seats"), 1),
-    standardRate: nonNegativeMoney(value("basePlanPrice") || selectedPlan?.price, 0),
-    offeredRate: nonNegativeMoney(value("monthlyFee") || selectedPlan?.price, 0),
-    sortOrder: 0
-  };
-  const totalSeats = editedPlanLines.reduce((sum, item) => sum + positiveIntOr(item.seats, 1), 0) || positiveIntOr(value("seats"), 1);
-  const totalStandard = editedPlanLines.reduce((sum, item) => sum + nonNegativeMoney(item.standardRate, 0), 0);
-  const totalOffered = editedPlanLines.reduce((sum, item) => sum + nonNegativeMoney(item.offeredRate, 0), 0);
+let editingMemberId = null;
+let editPlanLinesState = [];
 
+function renderEditRateSummary() {
+  if (!els.editRateSummary || !canSeeRevenue()) return;
+  const basePrice = editPlanLinesState.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
+  const offeredPrice = editPlanLinesState.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
+  const discount = Math.max(0, basePrice - offeredPrice);
+  els.editRateSummary.innerHTML = discount
+    ? `<strong>Discounted rate:</strong> ${fmt.format(offeredPrice)} offered instead of ${fmt.format(basePrice)} (${fmt.format(discount)} monthly discount).`
+    : `<strong>Standard rate:</strong> ${fmt.format(offeredPrice)} per month.`;
+}
+
+function renderEditPlanLines() {
+  if (!els.editPlanLines) return;
+  els.editPlanLines.innerHTML = editPlanLinesState.map((line, index) => `
+    <div class="plan-line-row" data-plan-line="${index}">
+      <label>Plan
+        <select data-field="bundlePlan">${planOptionHtml(line.planName)}</select>
+      </label>
+      <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${positiveIntOr(line.seats, 1)}"></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <button class="ghost-button plan-line-remove" data-action="remove-edit-plan-line" data-index="${index}" type="button" aria-label="Remove plan line">x</button>
+    </div>
+  `).join("");
+  renderEditRateSummary();
+}
+
+function updateEditPlanLine(index, field, value) {
+  const line = editPlanLinesState[index];
+  if (!line) return;
+  if (field === "bundlePlan") {
+    const plan = plans.find((item) => item.name === value);
+    line.planId = plan?.id || null;
+    line.planName = plan?.name || value;
+    line.category = plan?.category || inferPlanCategory(value);
+    line.seats = positiveIntOr(plan?.seats || line.seats, 1);
+    if (canSeeRevenue()) {
+      line.standardRate = nonNegativeMoney(plan?.price || line.standardRate, 0);
+      line.offeredRate = nonNegativeMoney(plan?.price || line.offeredRate, 0);
+    }
+    renderEditPlanLines();
+    return;
+  }
+  if (field === "bundleSeats") line.seats = positiveIntOr(value, 1);
+  if (field === "bundleStandard") line.standardRate = nonNegativeMoney(value, 0);
+  if (field === "bundleOffered") line.offeredRate = nonNegativeMoney(value, 0);
+  renderEditRateSummary();
+}
+
+function openMemberEditor(id) {
+  const member = memberRecords.find((item) => item.id === id);
+  if (!member || !els.memberEditDialog) return;
+  editingMemberId = id;
+  editPlanLinesState = (member.planItems || []).map((item) => ({ ...item }));
+  if (!editPlanLinesState.length) {
+    editPlanLinesState = [{
+      planId: member.planId || null,
+      planName: member.primaryPlanName || member.plan,
+      category: inferPlanCategory(member.primaryPlanName || member.plan),
+      seats: positiveIntOr(member.seats, 1),
+      standardRate: nonNegativeMoney(member.basePlanPrice, 0),
+      offeredRate: nonNegativeMoney(member.monthlyFee, 0),
+      sortOrder: 0
+    }];
+  }
+  const fields = els.memberEditForm.elements;
+  fields.name.value = member.name || "";
+  fields.company.value = member.company || "";
+  fields.phone.value = member.phone || "";
+  fields.email.value = member.email || "";
+  fields.joiningDate.value = member.joiningDate || "";
+  fields.renewalDate.value = member.renewalDate || "";
+  fields.status.value = member.status || "active";
+  fields.deposit.value = Number(member.deposit || 0);
+  fields.discountReason.value = member.discountReason || "";
+  fields.notes.value = member.notes || "";
+  els.memberEditTitle.textContent = member.name || "Member";
+  renderEditPlanLines();
+  els.memberEditDialog.showModal();
+}
+
+async function saveMemberEdit() {
+  const member = memberRecords.find((item) => item.id === editingMemberId);
+  if (!member) throw new Error("This member record is no longer available. Refresh and try again.");
+  const fields = els.memberEditForm.elements;
+  const lines = canSeeRevenue() && editPlanLinesState.length
+    ? editPlanLinesState
+    : member.planItems || editPlanLinesState;
+  const primary = lines[0];
+  const totalSeats = lines.reduce((sum, line) => sum + positiveIntOr(line.seats, 1), 0);
+  const totalStandard = lines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
+  const totalOffered = lines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
   const changes = {
-    full_name: value("name"),
-    company: value("company") || null,
-    phone: value("phone"),
-    email: value("email") || null,
-    plan_id: primaryPlanLine.planId || selectedPlan?.id || null,
-    plan_name: primaryPlanLine.planName,
+    full_name: fields.name.value.trim(),
+    company: fields.company.value.trim() || null,
+    phone: fields.phone.value.trim(),
+    email: fields.email.value.trim() || null,
+    plan_id: primary?.planId || null,
+    plan_name: primary?.planName || member.primaryPlanName,
     seats: totalSeats,
-    joining_date: value("joiningDate"),
-    renewal_date: value("renewalDate"),
-    notes: value("notes") || null,
-    status: value("status") || "active"
+    joining_date: fields.joiningDate.value,
+    renewal_date: fields.renewalDate.value,
+    notes: fields.notes.value.trim() || null,
+    status: fields.status.value || "active"
   };
   if (canSeeRevenue()) {
-    changes.standard_monthly_rate = totalStandard || nonNegativeMoney(value("basePlanPrice"), 0);
-    changes.offered_monthly_rate = totalOffered || nonNegativeMoney(value("monthlyFee"), 0);
-    changes.deposit_amount = nonNegativeMoney(value("deposit"), 0);
-    changes.discount_reason = value("discountReason") || null;
-  } else if (existingMember) {
-    changes.standard_monthly_rate = nonNegativeMoney(existingMember.basePlanPrice, 0);
-    changes.offered_monthly_rate = nonNegativeMoney(existingMember.monthlyFee, 0);
-    changes.deposit_amount = nonNegativeMoney(existingMember.deposit, 0);
-    changes.discount_reason = existingMember.discountReason || null;
+    changes.standard_monthly_rate = totalStandard;
+    changes.offered_monthly_rate = totalOffered;
+    changes.deposit_amount = nonNegativeMoney(fields.deposit.value, 0);
+    changes.discount_reason = fields.discountReason.value.trim() || null;
   }
-  await patchRow("members", id, changes);
+  await patchRow("members", editingMemberId, changes);
   if (canSeeRevenue()) {
-    await replaceMemberPlanItems(id, editedPlanLines.length ? editedPlanLines : [primaryPlanLine]);
+    await replaceMemberPlanItems(editingMemberId, lines);
   }
-  await recordAudit("update_member_sheet", "members", id, {
+  await recordAudit("update_member_record", "members", editingMemberId, {
     name: changes.full_name,
     status: changes.status,
-    monthly_fee: changes.offered_monthly_rate
+    monthly_fee: canSeeRevenue() ? totalOffered : undefined
   });
-}
-
-async function saveChangedSheetRows() {
-  const changedRows = [...els.memberSheet.querySelectorAll("tr.dirty")];
-  if (!changedRows.length) {
-    updateSheetMessage("No changes to save");
-    showToast("No changes to save", "The client sheet is already up to date.");
-    return false;
-  }
-  try {
-    setSyncStatus("Saving", "busy");
-    updateSheetMessage(`Saving ${changedRows.length} row${changedRows.length === 1 ? "" : "s"}...`);
-    for (const row of changedRows) {
-      await saveSheetRow(row.dataset.memberId);
-    }
-    await loadData();
-    updateSheetMessage("Saved");
-  } catch (error) {
-    setSyncStatus("Error", "error");
-    updateSheetMessage("Save failed");
-    throw error;
-  }
-}
-
-async function saveChangedSheetRowsFor(id) {
-  try {
-    setSyncStatus("Saving", "busy");
-    updateSheetMessage("Saving row...");
-    await saveSheetRow(id);
-    await loadData();
-    updateSheetMessage("Saved");
-  } catch (error) {
-    setSyncStatus("Error", "error");
-    updateSheetMessage("Save failed");
-    throw error;
-  }
+  await loadData();
 }
 
 async function deleteMember(id) {
   const member = memberRecords.find((item) => item.id === id);
   if (!member) return;
-  const confirmed = window.confirm(`Archive ${member.name} from active clients? Receipt history will be kept.`);
-  if (!confirmed) return;
+  const confirmed = await confirmAction({
+    title: `Archive ${member.name}?`,
+    message: "They move out of the active member list and stop being billed. All invoices, payments and receipts stay in the history, and you can restore them any time.",
+    confirmLabel: "Archive member",
+    danger: true
+  });
+  if (!confirmed) return false;
   try {
-    setSyncStatus("Deleting", "busy");
+    setSyncStatus("Saving", "busy");
     await patchRow("members", id, { status: "cancelled" });
     await recordAudit("archive_member", "members", id, { name: member.name, previous_status: member.status });
     await loadData();
-    showToast("Client archived", `${member.name} was removed from active clients.`);
+    showToast("Member archived", `${member.name} moved out of active members.`);
   } catch (error) {
-    showToast("Could not archive client", error.message, "error");
+    showToast("Could not archive member", error.message, "error");
     setSyncStatus("Error", "error");
+    throw error;
+  }
+}
+
+async function restoreMember(id) {
+  const member = memberRecords.find((item) => item.id === id);
+  if (!member) return;
+  const confirmed = await confirmAction({
+    title: `Restore ${member.name}?`,
+    message: "They return to the active member list and show up for billing again from their usual cycle.",
+    confirmLabel: "Restore member"
+  });
+  if (!confirmed) return false;
+  try {
+    setSyncStatus("Saving", "busy");
+    await patchRow("members", id, { status: "active" });
+    await recordAudit("restore_member", "members", id, { name: member.name });
+    await loadData();
+    showToast("Member restored", `${member.name} is active again.`);
+  } catch (error) {
+    showToast("Could not restore member", error.message, "error");
+    setSyncStatus("Error", "error");
+    throw error;
   }
 }
 
@@ -3443,14 +3483,32 @@ async function createMemberFromForm() {
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
-  if (button.dataset.action === "save-member-row") {
-    withControlLock(button, () => saveChangedSheetRowsFor(button.dataset.id), {
-      busyText: "Saving...",
-      successTitle: "Member row saved",
-      successDetail: "Client sheet changes were saved.",
-      errorTitle: "Could not save member row",
-      cooldownMs: 1800
-    });
+  if (button.dataset.action === "edit-member") {
+    openMemberEditor(button.dataset.id);
+    return;
+  }
+  if (button.dataset.action === "restore-member") {
+    withControlLock(button, () => restoreMember(button.dataset.id), {
+      busyText: "Restoring...",
+      errorTitle: "Could not restore member",
+      cooldownMs: 1600
+    }).catch(() => {});
+    return;
+  }
+  if (button.dataset.action === "remove-edit-plan-line") {
+    editPlanLinesState.splice(Number(button.dataset.index), 1);
+    if (!editPlanLinesState.length && plans[0]) {
+      editPlanLinesState = [{
+        planId: plans[0].id,
+        planName: plans[0].name,
+        category: plans[0].category,
+        seats: positiveIntOr(plans[0].seats, 1),
+        standardRate: nonNegativeMoney(plans[0].price, 0),
+        offeredRate: nonNegativeMoney(plans[0].price, 0),
+        sortOrder: 0
+      }];
+    }
+    renderEditPlanLines();
     return;
   }
   if (button.dataset.action === "save-cash-row") {
@@ -3497,7 +3555,7 @@ document.addEventListener("click", (event) => {
     });
     return;
   }
-  const member = members.find((item) => item.id === button.dataset.id);
+  const member = memberRecords.find((item) => item.id === button.dataset.id);
   if (!member) return;
   if (button.dataset.action === "paid") markPaid(member.id, button);
   if (button.dataset.action === "receipt") openReceipt(member);
@@ -3558,7 +3616,31 @@ els.resetQuickInvoice.addEventListener("click", () => {
   window.setTimeout(syncQuickInvoiceFields, 0);
 });
 els.memberSearch.addEventListener("input", renderMembers);
-els.sheetSearch.addEventListener("input", renderSheetEditor);
+if (els.memberFilters) {
+  els.memberFilters.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-filter]");
+    if (!chip) return;
+    memberFilter = chip.dataset.filter;
+    els.memberFilters.querySelectorAll(".chip").forEach((item) => {
+      const active = item === chip;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-selected", String(active));
+    });
+    renderMembers();
+  });
+}
+function openAddMemberDialog() {
+  if (!els.addMemberDialog) return;
+  if (window.location.hash.replace("#", "") !== "members") {
+    window.location.hash = "members";
+  }
+  els.memberForm.reset();
+  setDefaultDates();
+  syncPlanFields();
+  els.addMemberDialog.showModal();
+}
+if (els.openAddMember) els.openAddMember.addEventListener("click", openAddMemberDialog);
+if (els.openAddMemberTop) els.openAddMemberTop.addEventListener("click", openAddMemberDialog);
 els.cashSearch.addEventListener("input", renderCashAccounting);
 els.cashMonth.addEventListener("change", renderCashAccounting);
 els.cashReport.addEventListener("click", exportCashMonthlyReport);
@@ -3566,23 +3648,50 @@ els.ownerSearch.addEventListener("input", renderOwnerLedger);
 els.ownerMonth.addEventListener("change", renderOwnerLedger);
 els.ownerReport.addEventListener("click", exportOwnerMonthlyReport);
 if (els.auditReport) els.auditReport.addEventListener("click", exportAuditReport);
-els.memberSheet.addEventListener("input", (event) => {
-  const row = event.target.closest("tr[data-member-id]");
-  if (row) markSheetRowDirty(row);
-});
-els.memberSheet.addEventListener("change", (event) => {
-  const row = event.target.closest("tr[data-member-id]");
-  if (!row) return;
-  if (event.target.dataset.field === "planId") {
-    const selected = event.target.selectedOptions[0];
-    row.querySelector('[data-field="seats"]').value = selected.dataset.seats;
-    if (canSeeRevenue()) {
-      row.querySelector('[data-field="basePlanPrice"]').value = selected.dataset.price;
-      row.querySelector('[data-field="monthlyFee"]').value = selected.dataset.price;
-    }
-  }
-  markSheetRowDirty(row);
-});
+if (els.editAddPlanLine) {
+  els.editAddPlanLine.addEventListener("click", () => {
+    const template = plans[0] || {};
+    editPlanLinesState.push({
+      planId: template.id || null,
+      planName: template.name || "",
+      category: template.category || "individual",
+      seats: positiveIntOr(template.seats, 1),
+      standardRate: nonNegativeMoney(template.price, 0),
+      offeredRate: nonNegativeMoney(template.price, 0),
+      sortOrder: editPlanLinesState.length
+    });
+    renderEditPlanLines();
+  });
+}
+if (els.editPlanLines) {
+  const handleEditLine = (event) => {
+    const row = event.target.closest("[data-plan-line]");
+    if (!row) return;
+    updateEditPlanLine(Number(row.dataset.planLine), event.target.dataset.field, event.target.value);
+  };
+  els.editPlanLines.addEventListener("input", handleEditLine);
+  els.editPlanLines.addEventListener("change", handleEditLine);
+}
+if (els.memberEditForm) {
+  els.memberEditForm.addEventListener("submit", (event) => {
+    if (event.submitter?.value === "cancel") return;
+    event.preventDefault();
+    const submitButton = submitButtonFor(els.memberEditForm, event);
+    withControlLock(submitButton, async () => {
+      setSyncStatus("Saving", "busy");
+      await saveMemberEdit();
+      els.memberEditDialog.close();
+    }, {
+      busyText: "Saving...",
+      successTitle: "Member saved",
+      successDetail: "The record was updated.",
+      errorTitle: "Could not save member",
+      cooldownMs: 2000
+    }).catch(() => {
+      setSyncStatus("Error", "error");
+    });
+  });
+}
 els.cashSheet.addEventListener("change", (event) => {
   markLedgerRowDirty(event.target.closest("tr[data-cash-id]"), els.cashMessage, "Unsaved staff ledger row");
   if (event.target.dataset.field !== "entryType") return;
@@ -3612,15 +3721,6 @@ els.ownerSheet.addEventListener("change", (event) => {
 els.ownerSheet.addEventListener("input", (event) => {
   markLedgerRowDirty(event.target.closest("tr[data-owner-id]"), els.ownerMessage, "Unsaved owner ledger row");
 });
-els.saveAllSheetRows.addEventListener("click", () => {
-  withControlLock(els.saveAllSheetRows, saveChangedSheetRows, {
-    busyText: "Saving...",
-    successTitle: "Client sheet saved",
-    successDetail: "All changed rows were updated.",
-    errorTitle: "Could not save sheet",
-    cooldownMs: 2200
-  });
-});
 els.refreshMembers.addEventListener("click", () => loadData().catch((error) => {
   showToast("Could not refresh members", error.message, "error");
   setSyncStatus("Error", "error");
@@ -3645,30 +3745,49 @@ els.downloadReceipt.addEventListener("click", async () => {
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 if (els.closeStatement) els.closeStatement.addEventListener("click", () => els.statementDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
-els.resetMemberForm.addEventListener("click", () => {
-  window.setTimeout(() => {
-    setDefaultDates();
-    syncPlanFields();
-  }, 0);
-});
+if (els.memberForm.elements.joiningDate) {
+  els.memberForm.elements.joiningDate.addEventListener("change", () => {
+    const joining = els.memberForm.elements.joiningDate.value;
+    if (joining) {
+      els.memberForm.elements.renewalDate.value = isoDate(addMonthsClamped(new Date(`${joining}T00:00:00`), 1));
+    }
+  });
+}
 
 els.memberForm.addEventListener("submit", async (event) => {
+  if (event.submitter?.value === "cancel") {
+    els.addMemberDialog.close();
+    return;
+  }
   event.preventDefault();
   const submitButton = submitButtonFor(els.memberForm, event);
   withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
-    await createMemberFromForm();
+    const row = await createMemberFromForm();
+    const newName = row?.full_name || els.memberForm.elements.name.value;
     els.memberForm.reset();
     await loadData();
     setDefaultDates();
     syncPlanFields();
+    els.addMemberDialog.close();
+    if (row?.id) {
+      const created = members.find((member) => member.id === row.id);
+      if (created && !created.paid) {
+        const collect = await confirmAction({
+          title: `Collect first payment from ${newName}?`,
+          message: "You can also do this any time from the member list.",
+          confirmLabel: "Collect payment"
+        });
+        if (collect) await markPaid(row.id, null);
+      }
+    }
   }, {
     busyText: "Saving...",
     successTitle: "Member added",
     successDetail: "The new member record was saved.",
     errorTitle: "Could not save member",
-    cooldownMs: 2500
-  }).catch((error) => {
+    cooldownMs: 800
+  }).catch(() => {
     setSyncStatus("Error", "error");
   });
 });

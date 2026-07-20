@@ -2081,3 +2081,96 @@ h1 {
   display: block;
   margin-top: 12px;
 }
+
+/* ---------- member hub: filter chips, archived states, confirm dialog ---------- */
+
+.member-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  min-height: 34px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.chip:hover {
+  border-color: var(--brand);
+  color: var(--ink);
+}
+
+.chip.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.status.archived {
+  background: #edf0ef;
+  color: #5a6560;
+}
+
+.archived-row {
+  opacity: 0.6;
+}
+
+.archived-row:hover {
+  opacity: 1;
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 32px));
+  border-radius: 16px;
+}
+
+.confirm-panel {
+  padding: 26px;
+}
+
+.confirm-message {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.primary-button.danger {
+  background: #8a2525;
+}
+
+.primary-button.danger:hover {
+  background: #6f1d1d;
+}
+
+#addMemberDialog,
+#memberEditDialog {
+  width: min(720px, calc(100vw - 28px));
+}
+
+@media (max-width: 620px) {
+  .member-toolbar {
+    align-items: stretch;
+  }
+
+  .member-toolbar .search {
+    width: 100%;
+  }
+}
