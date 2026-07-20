@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" sizes="any">
     <title>Spaces Coworking Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -78,6 +81,11 @@
             <span>Pending this month</span>
             <strong id="metricPendingMonth">PKR 0</strong>
             <small>Current-cycle unpaid amount</small>
+          </article>
+          <article class="metric owner-only">
+            <span>Passes &amp; rooms this month</span>
+            <strong id="metricOtherIncome">PKR 0</strong>
+            <small>Day, weekly and meeting-room receipts</small>
           </article>
           <article class="metric">
             <span>Active members</span>
@@ -172,6 +180,10 @@
             <div class="cash-balance">
               <span>Customer collections</span>
               <strong id="cashReceivedMonth">PKR 0</strong>
+            </div>
+            <div class="cash-balance">
+              <span>Via Raza / Manager</span>
+              <strong id="cashRazaMonth">PKR 0</strong>
             </div>
             <div class="cash-balance">
               <span>Internal top-ups</span>
@@ -584,6 +596,32 @@
           <button class="primary-button" value="default" type="submit">Preview edited invoice</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="statementDialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Member statement</p>
+          <h2 id="statementTitle">History</h2>
+        </div>
+        <button class="icon-button" id="closeStatement" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="sheet-wrap statement-wrap">
+        <table class="sheet-table statement-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Issued</th>
+              <th>Valid till</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="statementBody"></tbody>
+        </table>
+      </div>
+      <p class="sheet-message" id="statementSummary"></p>
     </dialog>
 
     <dialog id="receiptDialog">

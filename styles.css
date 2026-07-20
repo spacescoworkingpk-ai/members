@@ -1,16 +1,16 @@
 :root {
-  --ink: #1f2523;
-  --muted: #66716c;
-  --line: #dde2dc;
-  --paper: #f6f8f9;
+  --ink: #1f262a;
+  --muted: #64757a;
+  --line: #dde4e2;
+  --paper: #f5f7f6;
   --panel: #ffffff;
-  --brand: #008fd0;
-  --brand-dark: #006db6;
+  --brand: #35606b;
+  --brand-dark: #294d56;
   --accent: #242424;
-  --blue: #008fd0;
+  --blue: #35606b;
   --red: #a84e55;
   --gold: #a58645;
-  --shadow: 0 18px 50px rgba(31, 37, 35, 0.09);
+  --shadow: 0 18px 50px rgba(31, 38, 42, 0.09);
 }
 
 * {
@@ -21,7 +21,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Albert Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 [hidden] {
@@ -97,7 +97,7 @@ a {
   flex-direction: column;
   gap: 28px;
   padding: 28px 22px;
-  background: #18231f;
+  background: #1f262a;
   color: #eef3ed;
 }
 
@@ -1560,7 +1560,7 @@ label textarea {
     z-index: 10;
     padding: 12px;
     gap: 12px;
-    background: #18231f;
+    background: #1f262a;
   }
 
   .brand {
@@ -2006,4 +2006,78 @@ label textarea {
     grid-column: 1 / -1;
     min-height: 46px;
   }
+}
+
+/* ---------- identity refresh: calm serif display + pill actions ---------- */
+
+h1,
+.metric strong,
+.cash-balance strong {
+  font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-weight: 400;
+}
+
+.auth-card h1 {
+  font-family: "Newsreader", Georgia, serif;
+}
+
+.eyebrow {
+  color: var(--brand);
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+
+.primary-button,
+.ghost-button {
+  border-radius: 999px;
+}
+
+.tiny-button {
+  border-radius: 999px;
+  background: #e7eeec;
+  color: var(--brand-dark);
+}
+
+.tiny-button:hover {
+  background: #d9e5e2;
+}
+
+.icon-button {
+  border-radius: 999px;
+}
+
+.auth-card {
+  border-radius: 16px;
+}
+
+.topbar,
+.panel,
+.metric,
+.toast,
+.sidebar-note {
+  border-radius: 14px;
+}
+
+.statement-wrap {
+  max-height: min(52vh, 460px);
+  overflow: auto;
+}
+
+.statement-table td,
+.statement-table th {
+  white-space: nowrap;
+}
+
+#statementDialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+#statementDialog .sheet-message {
+  display: block;
+  margin-top: 12px;
 }

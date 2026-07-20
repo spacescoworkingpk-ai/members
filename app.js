@@ -148,6 +148,7 @@ const els = {
   metricDue: document.querySelector("#metricDue"),
   metricPending: document.querySelector("#metricPending"),
   metricOutstanding: document.querySelector("#metricOutstanding"),
+  metricOtherIncome: document.querySelector("#metricOtherIncome"),
   webVisitors: document.querySelector("#webVisitors"),
   webWeekVisitors: document.querySelector("#webWeekVisitors"),
   webWhatsapp: document.querySelector("#webWhatsapp"),
@@ -185,6 +186,7 @@ const els = {
   cashBalance: document.querySelector("#cashBalance"),
   cashOpeningBalance: document.querySelector("#cashOpeningBalance"),
   cashReceivedMonth: document.querySelector("#cashReceivedMonth"),
+  cashRazaMonth: document.querySelector("#cashRazaMonth"),
   cashInternalMonth: document.querySelector("#cashInternalMonth"),
   cashExpensesMonth: document.querySelector("#cashExpensesMonth"),
   cashCashExpensesMonth: document.querySelector("#cashCashExpensesMonth"),
@@ -225,6 +227,11 @@ const els = {
   auditMessage: document.querySelector("#auditMessage"),
   editInvoiceDialog: document.querySelector("#editInvoiceDialog"),
   editInvoiceForm: document.querySelector("#editInvoiceForm"),
+  statementDialog: document.querySelector("#statementDialog"),
+  statementTitle: document.querySelector("#statementTitle"),
+  statementBody: document.querySelector("#statementBody"),
+  statementSummary: document.querySelector("#statementSummary"),
+  closeStatement: document.querySelector("#closeStatement"),
   receiptDialog: document.querySelector("#receiptDialog"),
   paymentSourceDialog: document.querySelector("#paymentSourceDialog"),
   paymentSourceTitle: document.querySelector("#paymentSourceTitle"),
@@ -406,9 +413,13 @@ async function loadStaffProfile() {
 async function loadData() {
   setSyncStatus("Syncing", "busy");
   staffProfile = await loadStaffProfile();
+  // Keep every unpaid invoice (arrears must never age out) but only the last
+  // twelve months of settled history, so the app stays fast as data grows.
+  const windowStart = isoDate(addMonthsClamped(new Date(), -12));
+  const invoiceWindow = `or=(status.neq.paid,issue_date.gte.${windowStart})`;
   const invoiceSelect = canSeeRevenue()
-    ? "select=*&order=created_at.desc"
-    : "select=id,invoice_number,member_id,invoice_type,issue_date,valid_till,status,created_at&order=created_at.desc";
+    ? `select=*&${invoiceWindow}&order=created_at.desc`
+    : `select=id,invoice_number,member_id,invoice_type,issue_date,valid_till,status,created_at&${invoiceWindow}&order=created_at.desc`;
   const optionalRows = (table, query) => selectRows(table, query)
     .then((rows) => ({ rows, ready: true }))
     .catch((error) => {
@@ -432,7 +443,7 @@ async function loadData() {
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
     selectRows("members", "select=*&order=created_at.desc"),
     selectRows("invoices", invoiceSelect),
-    canSeeRevenue() ? selectRows("payments", "select=*&order=paid_at.desc") : Promise.resolve([]),
+    canSeeRevenue() ? selectRows("payments", `select=*&paid_at=gte.${windowStart}&order=paid_at.desc`) : Promise.resolve([]),
     optionalRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc"),
     optionalRows("sales_receipts", "select=*&order=receipt_date.desc,created_at.desc"),
     optionalRows("member_plan_items", "select=*&order=sort_order.asc,created_at.asc"),
@@ -1043,6 +1054,13 @@ function renderMetrics() {
   els.metricDue.textContent = dueSoon;
   els.metricPending.textContent = members.filter((member) => !member.paid).length + members.reduce((sum, member) => sum + Number(member.previousUnpaidCount || 0), 0);
   els.metricOutstanding.textContent = canSeeRevenue() ? `${fmt.format(pending)} outstanding` : "Amount restricted";
+  if (els.metricOtherIncome) {
+    const monthRange = cashMonthRange(monthKey());
+    const otherIncome = salesReceipts
+      .filter((receipt) => entryInRange(receipt, monthRange, "receipt_date"))
+      .reduce((sum, receipt) => sum + Number(receipt.total_amount || 0), 0);
+    els.metricOtherIncome.textContent = moneyOrRestricted(otherIncome);
+  }
 }
 
 function renderMembers() {
@@ -1089,6 +1107,7 @@ function renderMembers() {
         <td><span class="status ${state}">${stateLabel(state)}</span></td>
         <td>
           <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
+          <button class="tiny-button" data-action="history" data-id="${member.id}" type="button">History</button>
           ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edit invoice</button>` : ""}
           ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
           <button class="tiny-button danger" data-action="delete-member" data-id="${member.id}" type="button">Archive</button>
@@ -1630,6 +1649,9 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
   const customerReceived = monthEntries
     .filter((entry) => entry.entry_type === "receiving" && !isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const razaReceived = monthEntries
+    .filter((entry) => entry.entry_type === "receiving" && !isInternalTransfer(entry) && entry.payment_source === "raza_manager")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const internalTopups = monthEntries
     .filter((entry) => entry.entry_type === "receiving" && isInternalTransfer(entry))
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
@@ -1651,6 +1673,7 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
     opening,
     received,
     customerReceived,
+    razaReceived,
     internalTopups,
     expenses,
     cashExpenses,
@@ -1696,6 +1719,7 @@ function renderCashAccounting() {
   const summary = cashMonthlySummary();
   els.cashOpeningBalance.textContent = fmt.format(summary.opening);
   els.cashReceivedMonth.textContent = fmt.format(summary.customerReceived);
+  if (els.cashRazaMonth) els.cashRazaMonth.textContent = fmt.format(summary.razaReceived);
   if (els.cashInternalMonth) els.cashInternalMonth.textContent = fmt.format(summary.internalTopups);
   els.cashExpensesMonth.textContent = fmt.format(summary.expenses);
   if (els.cashCashExpensesMonth) els.cashCashExpensesMonth.textContent = fmt.format(summary.cashExpenses);
@@ -2956,6 +2980,32 @@ function openReceipt(member) {
   openInvoice(member, { mode: "receipt" });
 }
 
+function openStatement(member) {
+  if (!els.statementDialog) return;
+  const memberInvoices = invoices
+    .filter((invoice) => invoice.member_id === member.id)
+    .slice()
+    .sort((a, b) => String(b.valid_till || "").localeCompare(String(a.valid_till || "")) || String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const statusText = { paid: "Paid", sent: "Unpaid", draft: "Draft", void: "Cancelled", overdue: "Overdue" };
+  els.statementTitle.textContent = member.name;
+  els.statementBody.innerHTML = memberInvoices.length ? memberInvoices.map((invoice) => `
+    <tr>
+      <td>${escapeHtml(invoice.invoice_number)}</td>
+      <td>${formatDate(invoice.issue_date)}</td>
+      <td>${formatDate(invoice.valid_till)}</td>
+      <td>${escapeHtml(invoice.invoice_type || "membership")}</td>
+      <td><span class="status ${invoice.status === "paid" ? "paid" : invoice.status === "void" ? "" : "overdue"}">${statusText[invoice.status] || escapeHtml(invoice.status)}</span></td>
+      <td>${canSeeRevenue() ? fmt.format(Number(invoice.total_amount || 0)) : "Restricted"}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6">No invoices recorded for this member yet.</td></tr>`;
+  const unpaid = memberInvoices.filter((invoice) => ["sent", "overdue"].includes(invoice.status));
+  const unpaidTotal = unpaid.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
+  els.statementSummary.textContent = unpaid.length
+    ? `${unpaid.length} unpaid invoice${unpaid.length === 1 ? "" : "s"}${canSeeRevenue() ? ` totalling ${fmt.format(unpaidTotal)}` : ""}. Paid history shows the last 12 months.`
+    : "Nothing outstanding. Paid history shows the last 12 months.";
+  els.statementDialog.showModal();
+}
+
 function openEditedInvoiceForm(member) {
   if (!canSeeRevenue()) {
     showToast("Owner access required", "Discounted invoices can only be created by Abrar.", "error");
@@ -3054,6 +3104,8 @@ function exportCashMonthlyReport() {
     ["Month", summary.key],
     ["Opening balance", summary.opening],
     ["Customer collections", summary.customerReceived],
+    ["Collected via Raza / Manager", summary.razaReceived],
+    ["Collected via staff", summary.customerReceived - summary.razaReceived],
     ["Internal top-ups", summary.internalTopups],
     ["Total amount received", summary.received],
     ["Total staff expenses", summary.expenses],
@@ -3285,7 +3337,7 @@ async function generateQuickInvoice() {
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
   const paymentMode = data.get("paymentMode");
-  const receiptNumber = `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+  const receiptNumber = `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0")}`;
   const customer = {
     name: data.get("name"),
     phone: data.get("phone")
@@ -3449,6 +3501,7 @@ document.addEventListener("click", (event) => {
   if (!member) return;
   if (button.dataset.action === "paid") markPaid(member.id, button);
   if (button.dataset.action === "receipt") openReceipt(member);
+  if (button.dataset.action === "history") openStatement(member);
   if (button.dataset.action === "edit-invoice") openEditedInvoiceForm(member);
 });
 
@@ -3590,6 +3643,7 @@ els.downloadReceipt.addEventListener("click", async () => {
   }
 });
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
+if (els.closeStatement) els.closeStatement.addEventListener("click", () => els.statementDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
 els.resetMemberForm.addEventListener("click", () => {
   window.setTimeout(() => {
