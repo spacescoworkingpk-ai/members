@@ -1012,9 +1012,15 @@ function renderWebsiteAnalytics() {
     ["Map opens", actionCount(["maps"])]
   ];
   els.webActions.innerHTML = actions.map(([label, count]) => `<div class="web-action"><span>${escapeHtml(label)}</span><strong>${count}</strong></div>`).join("");
-  els.webAnalyticsMessage.textContent = websiteAnalyticsReady
-    ? (websiteEvents.length ? `${websiteEvents.length} anonymous events recorded in the last 30 days.` : "No visits recorded yet.")
-    : "Website analytics needs the Supabase website analytics patch.";
+  if (!websiteAnalyticsReady) {
+    els.webAnalyticsMessage.textContent = `Analytics storage is not set up yet. Run ${CATCHUP_MIGRATION} in the Supabase SQL editor.`;
+  } else if (websiteEvents.length) {
+    els.webAnalyticsMessage.textContent = `${websiteEvents.length} anonymous events recorded in the last 30 days.`;
+  } else {
+    // The table is readable, so the gap is upstream: the public site can only
+    // save a visit when both Vercel env vars are present.
+    els.webAnalyticsMessage.textContent = "No visits recorded yet. Visits are only saved when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in Vercel (Settings > Environment Variables), followed by a redeploy. Counting starts from the moment that is done.";
+  }
 }
 
 function renderMetrics() {
