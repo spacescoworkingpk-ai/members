@@ -1019,7 +1019,7 @@ function renderWebsiteAnalytics() {
   } else {
     // The table is readable, so the gap is upstream: the public site can only
     // save a visit when both Vercel env vars are present.
-    els.webAnalyticsMessage.textContent = "No visits recorded yet. Visits are only saved when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in Vercel (Settings > Environment Variables), followed by a redeploy. Counting starts from the moment that is done.";
+    els.webAnalyticsMessage.textContent = "No visits recorded yet. Visits are only saved once SUPABASE_SERVICE_ROLE_KEY is added in Vercel (Settings > Environment Variables) and the project is redeployed. Counting starts from that moment.";
   }
 }
 

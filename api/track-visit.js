@@ -25,9 +25,14 @@ export default async function handler(request, response) {
   if (request.method !== "POST") return response.status(405).json({ error: "Method not allowed" });
   const body = request.body || {};
   if (!allowedEvents.has(body.eventName) || !body.sessionId) return response.status(400).json({ error: "Invalid event" });
-  const supabaseUrl = process.env.SUPABASE_URL;
+  // The project URL is already public in the client, so fall back to it and
+  // keep SUPABASE_SERVICE_ROLE_KEY as the only value that must be configured.
+  const supabaseUrl = process.env.SUPABASE_URL || "https://hsnkcrxowajnadwtzdlk.supabase.co";
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRole) return response.status(204).end();
+  if (!serviceRole) {
+    console.warn("track-visit: SUPABASE_SERVICE_ROLE_KEY is not set, so this visit was not saved.");
+    return response.status(204).end();
+  }
 
   const row = {
     session_id: clean(body.sessionId, 80),
