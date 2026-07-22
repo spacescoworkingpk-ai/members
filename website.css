@@ -574,9 +574,15 @@ button {
 
 .plan-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: clamp(20px, 2.6vw, 32px);
-  margin-top: clamp(38px, 5vw, 58px);
+  margin-top: clamp(24px, 3vw, 32px);
+}
+
+@media (max-width: 1180px) {
+  .plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .plan-card {
@@ -1382,5 +1388,189 @@ body.dialog-open {
   .js [data-reveal] {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* ---------- plan detail: shift strip, tick lists, hours card, rooms ---------- */
+
+.shift-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(16px, 3vw, 40px);
+  margin-top: clamp(28px, 4vw, 40px);
+  padding: clamp(20px, 3vw, 28px) clamp(20px, 3vw, 32px);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.shift-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.shift-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--spruce);
+  margin-bottom: 4px;
+}
+
+.shift-strip strong {
+  font-weight: 500;
+  font-size: clamp(15px, 1.5vw, 17px);
+  color: var(--ink);
+}
+
+.shift-strip em {
+  margin-top: 3px;
+  font-style: normal;
+  font-size: 13.5px;
+  color: var(--slate);
+}
+
+.plan-essence {
+  color: var(--slate);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.plan-points {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.plan-points li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.plan-points li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  width: 9px;
+  height: 5px;
+  border-left: 1.8px solid var(--spruce);
+  border-bottom: 1.8px solid var(--spruce);
+  transform: rotate(-45deg);
+}
+
+/* The both-shifts plan is about time, not a room, so it gets the page's one
+   dark card instead of a photograph. */
+.plan-card-hours {
+  background: #191f22;
+  border-color: #191f22;
+  color: #ece5db;
+}
+
+.plan-card-hours h3,
+.plan-card-hours .plan-price {
+  color: #f4efe7;
+}
+
+.plan-card-hours .plan-essence {
+  color: rgba(236, 229, 219, 0.75);
+}
+
+.plan-card-hours .plan-price small {
+  color: rgba(236, 229, 219, 0.6);
+}
+
+.plan-card-hours .plan-cta {
+  color: var(--brue-soft);
+  border-bottom-color: rgba(216, 177, 138, 0.45);
+}
+
+.plan-points.light li {
+  color: rgba(236, 229, 219, 0.85);
+}
+
+.plan-points.light li::before {
+  border-left-color: var(--brue-soft);
+  border-bottom-color: var(--brue-soft);
+}
+
+.hours-block {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 0;
+  border-top: 1px solid rgba(236, 229, 219, 0.16);
+  border-bottom: 1px solid rgba(236, 229, 219, 0.16);
+}
+
+.hours-block > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hours-block span {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brue-soft);
+  margin-bottom: 3px;
+}
+
+.hours-block strong {
+  font-weight: 400;
+  font-size: 15px;
+  color: #f4efe7;
+}
+
+.plan-rooms {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+  margin-top: clamp(20px, 2.6vw, 32px);
+  padding: clamp(22px, 3vw, 32px);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.plan-rooms-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.plan-rooms-photos img {
+  width: 100%;
+  height: clamp(180px, 22vw, 260px);
+  object-fit: cover;
+  border-radius: 14px;
+}
+
+.plan-rooms-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plan-rooms-body h3 {
+  font-size: clamp(26px, 2.4vw, 32px);
+  font-weight: 500;
+}
+
+@media (max-width: 980px) {
+  .shift-strip,
+  .plan-rooms {
+    grid-template-columns: 1fr;
   }
 }

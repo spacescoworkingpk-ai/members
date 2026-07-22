@@ -29,6 +29,13 @@ const quickServices = {
     rate: 1500,
     validity: "day"
   },
+  "room-day-pass": {
+    label: "Room Day Pass",
+    unitLabel: "No. of rooms",
+    unitName: "rooms",
+    rate: 6500,
+    validity: "day"
+  },
   "weekly-pass": {
     label: "Weekly Pass",
     unitLabel: "No. of people",
@@ -1060,13 +1067,30 @@ function memberMatchesSearch(member, query) {
   return `${member.name} ${member.company || ""} ${member.phone} ${member.email || ""} ${member.plan} ${lineText} ${member.status}`.toLowerCase().includes(query);
 }
 
+// A "team" is any member holding 2 or more seats, whether that is a bundle of
+// plans (e.g. one dedicated + one flexible) or a multi-person room.
+function teamSeatCount(member) {
+  const fromItems = (member.planItems || []).reduce((sum, item) => sum + positiveIntOr(item.seats, 1), 0);
+  return fromItems || positiveIntOr(member.seats, 1);
+}
+
+function isTeamMember(member) {
+  return teamSeatCount(member) >= 2;
+}
+
+function teamBadge(member) {
+  return isTeamMember(member)
+    ? `<span class="team-tag">Team · ${teamSeatCount(member)} seats</span>`
+    : "";
+}
+
 function activeMemberRow(member) {
   const state = paymentState(member);
   const lineSummary = (member.planItems || []).map((item) => `${item.seats} ${item.planName}${canSeeRevenue() ? ` @ ${fmt.format(item.offeredRate)}` : ""}`).join(" | ");
   return `
     <tr>
       <td><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.company || "Individual")} | ${escapeHtml(member.phone)}</span></td>
-      <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span></td>
+      <td><span class="category-label">${escapeHtml(memberCategoryLabel(member))}</span>${teamBadge(member)}</td>
       <td><strong>${escapeHtml(member.plan)}</strong><span>${escapeHtml(lineSummary || `${member.seats} seat${Number(member.seats) === 1 ? "" : "s"}`)}</span></td>
       <td>${formatDate(member.joiningDate)}</td>
       <td>${formatDate(member.validTill)}</td>
@@ -1109,6 +1133,19 @@ function renderMembers() {
       </tr>
     `).join("") : `<tr><td colspan="8">No archived members${query ? " match this search" : ""}.</td></tr>`;
     els.memberCount.textContent = `${archived.length} archived member${archived.length === 1 ? "" : "s"}`;
+    return;
+  }
+
+  if (memberFilter === "teams") {
+    const teams = members
+      .filter((member) => isTeamMember(member))
+      .filter((member) => memberMatchesSearch(member, query))
+      .sort((a, b) => teamSeatCount(b) - teamSeatCount(a) || a.name.localeCompare(b.name));
+    const totalSeats = teams.reduce((sum, member) => sum + teamSeatCount(member), 0);
+    els.membersTable.innerHTML = teams.length
+      ? teams.map(activeMemberRow).join("")
+      : `<tr><td colspan="8">No team clients${query ? " match this search" : " yet. Members with 2 or more seats appear here"}.</td></tr>`;
+    els.memberCount.textContent = `${teams.length} team client${teams.length === 1 ? "" : "s"} | ${totalSeats} seats`;
     return;
   }
 
@@ -3384,14 +3421,42 @@ function renderRateSummary() {
     : `<strong>Standard signup:</strong> ${memberFormPlanLines.length} invoice line${memberFormPlanLines.length === 1 ? "" : "s"} totaling ${fmt.format(offeredPrice)}.`;
 }
 
+function updateQuickInvoiceSummary() {
+  const service = quickServices[els.quickService.value];
+  const quantity = positiveIntOr(els.quickQuantity.value, 1);
+  const rate = nonNegativeMoney(els.quickRate.value, 0);
+  const total = nonNegativeMoney(els.quickTotal.value, 0);
+  const derived = rate * quantity;
+  const custom = total !== derived
+    ? ` <em class="quick-adjusted">Custom total (standard ${fmt.format(derived)})</em>`
+    : "";
+  els.quickInvoiceSummary.innerHTML = `<strong>${service.label}:</strong> ${quantity} ${service.unitName} x ${fmt.format(rate)} = ${fmt.format(total)}.${custom}`;
+}
+
+// Reset rate and total to the service default. Used on service change.
 function syncQuickInvoiceFields() {
   const service = quickServices[els.quickService.value];
   const quantity = positiveIntOr(els.quickQuantity.value, 1);
-  const total = service.rate * quantity;
   els.quickQuantityLabel.textContent = service.unitLabel;
   els.quickRate.value = service.rate;
-  els.quickTotal.value = total;
-  els.quickInvoiceSummary.innerHTML = `<strong>${service.label}:</strong> ${quantity} ${service.unitName} x ${fmt.format(service.rate)} = ${fmt.format(total)}.`;
+  els.quickTotal.value = service.rate * quantity;
+  updateQuickInvoiceSummary();
+}
+
+// Rate or quantity changed: total follows from them.
+function quickTotalFromRate() {
+  const quantity = positiveIntOr(els.quickQuantity.value, 1);
+  const rate = nonNegativeMoney(els.quickRate.value, 0);
+  els.quickTotal.value = rate * quantity;
+  updateQuickInvoiceSummary();
+}
+
+// Total was typed directly: keep the per-unit rate consistent with it.
+function quickRateFromTotal() {
+  const quantity = positiveIntOr(els.quickQuantity.value, 1);
+  const total = nonNegativeMoney(els.quickTotal.value, 0);
+  els.quickRate.value = quantity > 0 ? Math.round(total / quantity) : total;
+  updateQuickInvoiceSummary();
 }
 
 function quickValidity(service, quantity) {
@@ -3423,7 +3488,9 @@ async function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
   const quantity = positiveIntOr(data.get("quantity"), 1);
-  const amount = service.rate * quantity;
+  // Rate and total are staff-editable; the typed total is what gets charged.
+  const rate = nonNegativeMoney(data.get("rate"), service.rate);
+  const amount = nonNegativeMoney(data.get("total"), rate * quantity);
   const note = data.get("notes") || "";
   const validity = quickValidity(service, quantity);
   const paymentMode = data.get("paymentMode");
@@ -3439,7 +3506,7 @@ async function generateQuickInvoice() {
       p_phone: customer.phone,
       p_service_name: service.label,
       p_quantity: quantity,
-      p_unit_rate: service.rate,
+      p_unit_rate: rate,
       p_total_amount: amount,
       p_payment_source: paymentMode,
       p_receipt_date: validity.receiptDate,
@@ -3467,7 +3534,7 @@ async function generateQuickInvoice() {
     description: `${service.label} - ${quantity} ${service.unitName}`,
     seats: quantity,
     standardPrice: amount,
-    unitPrice: service.rate,
+    unitPrice: rate,
     amount,
     ...validity,
     note: [`Payment source: ${paymentSourceLabel(paymentMode)}`, note].filter(Boolean).join(" | ")
@@ -3661,7 +3728,9 @@ els.memberForm.elements.monthlyFee.addEventListener("input", () => {
   renderRateSummary();
 });
 els.quickService.addEventListener("change", syncQuickInvoiceFields);
-els.quickQuantity.addEventListener("input", syncQuickInvoiceFields);
+els.quickQuantity.addEventListener("input", quickTotalFromRate);
+els.quickRate.addEventListener("input", quickTotalFromRate);
+els.quickTotal.addEventListener("input", quickRateFromTotal);
 els.resetQuickInvoice.addEventListener("click", () => {
   window.setTimeout(syncQuickInvoiceFields, 0);
 });

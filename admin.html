@@ -136,6 +136,7 @@
               <label>Service
                 <select required name="service" id="quickService">
                   <option value="day-pass">Day Pass</option>
+                  <option value="room-day-pass">Room Day Pass</option>
                   <option value="weekly-pass">Weekly Pass</option>
                   <option value="conference-room">Conference Room</option>
                 </select>
@@ -149,8 +150,8 @@
                   <option value="abrar_owner">Abrar / Owner</option>
                 </select>
               </label>
-              <label>Rate<input readonly name="rate" id="quickRate" type="number"></label>
-              <label>Total<input readonly name="total" id="quickTotal" type="number"></label>
+              <label>Rate each<input name="rate" id="quickRate" type="number" min="0" step="100"></label>
+              <label>Total amount<input name="total" id="quickTotal" type="number" min="0" step="100"></label>
               <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>
             </div>
             <div class="rate-summary" id="quickInvoiceSummary"></div>
@@ -421,6 +422,7 @@
             <div class="member-toolbar">
               <div class="filter-chips" id="memberFilters" role="tablist" aria-label="Filter members">
                 <button class="chip active" data-filter="all" type="button" role="tab" aria-selected="true">All</button>
+                <button class="chip" data-filter="teams" type="button" role="tab" aria-selected="false">Teams</button>
                 <button class="chip" data-filter="unpaid" type="button" role="tab" aria-selected="false">Unpaid</button>
                 <button class="chip" data-filter="due" type="button" role="tab" aria-selected="false">Due soon</button>
                 <button class="chip" data-filter="archived" type="button" role="tab" aria-selected="false">Archived</button>
