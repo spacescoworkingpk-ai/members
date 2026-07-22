@@ -319,19 +319,89 @@ function showApp() {
   els.appShell.hidden = false;
 }
 
-async function login(email, password) {
-  const response = await fetch(`${supabaseConfig.url}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: supabaseConfig.anonKey,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ email, password })
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error_description || payload.msg || "Login failed");
+// Failed-attempt throttle.
+//
+// This slows down someone guessing passwords at the keyboard, and it stops a
+// script that drives this page. It is NOT the last line of defence: anyone can
+// post straight to Supabase and never load this file. The real controls are
+// CAPTCHA and rate limiting in the Supabase dashboard - see SECURITY.md.
+const lockoutKey = "spaces-login-throttle";
+const lockoutSteps = [0, 0, 5, 15, 60, 300];
+
+function readThrottle() {
+  try {
+    return JSON.parse(localStorage.getItem(lockoutKey)) || { fails: 0, until: 0 };
+  } catch {
+    return { fails: 0, until: 0 };
   }
+}
+
+function writeThrottle(state) {
+  try {
+    localStorage.setItem(lockoutKey, JSON.stringify(state));
+  } catch {
+    // A locked-down browser just loses the throttle; the server still governs.
+  }
+}
+
+function lockoutSecondsLeft() {
+  const { until } = readThrottle();
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+function noteFailedLogin() {
+  const state = readThrottle();
+  state.fails += 1;
+  const wait = lockoutSteps[Math.min(state.fails, lockoutSteps.length - 1)];
+  state.until = wait ? Date.now() + wait * 1000 : 0;
+  writeThrottle(state);
+  return wait;
+}
+
+function clearFailedLogins() {
+  writeThrottle({ fails: 0, until: 0 });
+}
+
+function describeWait(seconds) {
+  if (seconds >= 60) {
+    const minutes = Math.ceil(seconds / 60);
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
+async function login(email, password) {
+  const waiting = lockoutSecondsLeft();
+  if (waiting) {
+    throw new Error(`Too many failed attempts. Try again in ${describeWait(waiting)}.`);
+  }
+  let response;
+  try {
+    response = await fetch(`${supabaseConfig.url}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: {
+        apikey: supabaseConfig.anonKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email: String(email).trim(), password })
+    });
+  } catch {
+    // A network failure is not a failed credential, so it must not count
+    // towards the lockout.
+    throw new Error("Could not reach the server. Check the connection and try again.");
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    // Deliberately generic: never reveal whether the email exists, and never
+    // echo the server's wording back to an attacker.
+    const wait = noteFailedLogin();
+    const suffix = wait ? ` Too many attempts - wait ${describeWait(wait)} before trying again.` : "";
+    if (response.status === 429) {
+      throw new Error("Too many sign-in attempts have been made. Wait a few minutes and try again.");
+    }
+    throw new Error(`Email or password is incorrect.${suffix}`);
+  }
+  clearFailedLogins();
   saveSession(payload);
 }
 
@@ -3680,17 +3750,43 @@ document.addEventListener("click", (event) => {
   if (button.dataset.action === "edit-invoice") openEditedInvoiceForm(member);
 });
 
+let lockoutTicker = null;
+
+function refreshLockoutNotice() {
+  const submit = els.authForm.querySelector('button[type="submit"]');
+  const seconds = lockoutSecondsLeft();
+  if (seconds) {
+    submit.disabled = true;
+    els.authMessage.textContent = `Too many failed attempts. Try again in ${describeWait(seconds)}.`;
+    if (!lockoutTicker) lockoutTicker = window.setInterval(refreshLockoutNotice, 1000);
+  } else {
+    submit.disabled = false;
+    window.clearInterval(lockoutTicker);
+    lockoutTicker = null;
+  }
+}
+
 els.authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (lockoutSecondsLeft()) return refreshLockoutNotice();
+  const submit = els.authForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
   els.authMessage.textContent = "Signing in...";
   try {
     await login(els.authEmail.value, els.authPassword.value);
+    els.authPassword.value = "";
     showApp();
     await loadData();
   } catch (error) {
+    els.authPassword.value = "";
     els.authMessage.textContent = error.message;
+  } finally {
+    submit.disabled = false;
+    refreshLockoutNotice();
   }
 });
+
+refreshLockoutNotice();
 
 els.logoutButton.addEventListener("click", () => {
   saveSession(null);
