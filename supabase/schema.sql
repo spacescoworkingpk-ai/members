@@ -982,7 +982,7 @@ insert into public.plans (name, category, default_seats, standard_monthly_rate)
 values
   ('Flexible Desk', 'individual', 1, 15500),
   ('Dedicated Desk', 'individual', 1, 17500),
-  ('Dedicated Desk Plus', 'individual', 1, 32000),
+  ('Dedicated Desk Plus', 'individual', 1, 24000),
   ('Personal Desk', 'individual', 1, 20000),
   ('Room 01 - 05 persons', 'room', 5, 92500),
   ('Room 02 - 11 persons', 'room', 11, 203500),
