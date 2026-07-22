@@ -360,3 +360,62 @@ const sectionObserver = new IntersectionObserver((entries) => entries.forEach((e
   sectionObserver.unobserve(entry.target);
 }), { threshold: 0.35 });
 document.querySelectorAll("[data-track-section]").forEach((section) => sectionObserver.observe(section));
+
+// Plan carousel. The track is moved with a transform rather than container
+// scrolling, so the position is exact and identical on every browser. Touch
+// swipe is handled explicitly for the same reason.
+const planViewport = document.querySelector("#planViewport");
+const planTrack = document.querySelector("#planTrack");
+if (planViewport && planTrack) {
+  const planSlides = [...planTrack.querySelectorAll(".plan-slide")];
+  const dotsHost = document.querySelector("#planDots");
+  const prevButton = document.querySelector("[data-plan-prev]");
+  const nextButton = document.querySelector("[data-plan-next]");
+  let planIndex = 0;
+
+  const dots = planSlides.map((slide, index) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.setAttribute("role", "tab");
+    dot.setAttribute("aria-label", slide.getAttribute("aria-label") || `Plan ${index + 1}`);
+    dot.addEventListener("click", () => goToPlan(index));
+    dotsHost.appendChild(dot);
+    return dot;
+  });
+
+  function goToPlan(index, announce = true) {
+    planIndex = Math.max(0, Math.min(index, planSlides.length - 1));
+    planTrack.style.transform = `translateX(-${planIndex * 100}%)`;
+    dots.forEach((dot, i) => dot.setAttribute("aria-selected", String(i === planIndex)));
+    planSlides.forEach((slide, i) => slide.setAttribute("aria-hidden", String(i !== planIndex)));
+    prevButton.disabled = planIndex === 0;
+    nextButton.disabled = planIndex === planSlides.length - 1;
+    if (announce) {
+      track("membership_expand", "plans", { membership: planSlides[planIndex].getAttribute("aria-label") });
+    }
+  }
+
+  prevButton.addEventListener("click", () => goToPlan(planIndex - 1));
+  nextButton.addEventListener("click", () => goToPlan(planIndex + 1));
+  planViewport.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") { event.preventDefault(); goToPlan(planIndex - 1); }
+    if (event.key === "ArrowRight") { event.preventDefault(); goToPlan(planIndex + 1); }
+  });
+
+  // Swipe: only act on a clear horizontal gesture so vertical page scrolling
+  // is never hijacked.
+  let touchStartX = 0;
+  let touchStartY = 0;
+  planViewport.addEventListener("touchstart", (event) => {
+    touchStartX = event.changedTouches[0].clientX;
+    touchStartY = event.changedTouches[0].clientY;
+  }, { passive: true });
+  planViewport.addEventListener("touchend", (event) => {
+    const deltaX = event.changedTouches[0].clientX - touchStartX;
+    const deltaY = event.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+    goToPlan(planIndex + (deltaX < 0 ? 1 : -1));
+  }, { passive: true });
+
+  goToPlan(0, false);
+}

@@ -572,18 +572,7 @@ button {
   max-width: 620px;
 }
 
-.plan-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(20px, 2.6vw, 32px);
-  margin-top: clamp(24px, 3vw, 32px);
-}
 
-@media (max-width: 1180px) {
-  .plan-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 .plan-card {
   display: flex;
@@ -1572,5 +1561,170 @@ body.dialog-open {
   .shift-strip,
   .plan-rooms {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* ---------- plan carousel ---------- */
+
+.plan-carousel {
+  margin-top: clamp(24px, 3vw, 34px);
+}
+
+.plan-viewport {
+  overflow: hidden;
+  border-radius: var(--radius);
+  touch-action: pan-y;
+}
+
+.plan-viewport:focus-visible {
+  outline: 2px solid var(--spruce);
+  outline-offset: 4px;
+}
+
+/* Movement is a transform on the track, not container scrolling, so the
+   position is deterministic on every browser and testable. */
+.plan-track {
+  display: flex;
+  transition: transform 520ms var(--ease);
+  will-change: transform;
+}
+
+.plan-slide {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.plan-slide-photo {
+  overflow: hidden;
+  background: var(--cloud);
+}
+
+.plan-slide-photo img {
+  width: 100%;
+  height: 100%;
+  min-height: clamp(300px, 42vw, 460px);
+  object-fit: cover;
+}
+
+.plan-slide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(26px, 3.4vw, 46px);
+}
+
+.plan-slide-body h3 {
+  font-size: clamp(30px, 3.2vw, 42px);
+  font-weight: 500;
+}
+
+.plan-slide .plan-points {
+  margin-top: 2px;
+}
+
+.plan-slide .plan-price {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+/* The both-shifts plan sells time, not a different room, so it carries the
+   page's one dark surface instead of a photograph. */
+.plan-slide-hours {
+  grid-template-columns: 1fr;
+  background: #191f22;
+  border-color: #191f22;
+  color: #ece5db;
+}
+
+.plan-slide-hours .plan-slide-body {
+  max-width: 680px;
+}
+
+.plan-slide-hours h3,
+.plan-slide-hours .plan-price {
+  color: #f4efe7;
+}
+
+.plan-slide-hours .plan-essence {
+  color: rgba(236, 229, 219, 0.78);
+}
+
+.plan-slide-hours .plan-price small {
+  color: rgba(236, 229, 219, 0.6);
+}
+
+.plan-slide-hours .plan-cta {
+  color: var(--brue-soft);
+  border-bottom-color: rgba(216, 177, 138, 0.45);
+}
+
+.plan-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.plan-arrow {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--white);
+  color: var(--ink);
+  font-size: 16px;
+  transition: background-color 240ms var(--ease), border-color 240ms var(--ease),
+    color 240ms var(--ease), opacity 240ms var(--ease);
+}
+
+.plan-arrow:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--porcelain);
+}
+
+.plan-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.plan-dots {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.plan-dots button {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hairline);
+  transition: background-color 240ms var(--ease), transform 240ms var(--ease);
+}
+
+.plan-dots button[aria-selected="true"] {
+  background: var(--spruce);
+  transform: scale(1.35);
+}
+
+@media (max-width: 860px) {
+  .plan-slide {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-slide-photo img {
+    min-height: 240px;
+    max-height: 300px;
   }
 }
