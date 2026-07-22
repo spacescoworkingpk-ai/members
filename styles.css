@@ -2174,3 +2174,15 @@ h1 {
     width: 100%;
   }
 }
+
+/* Turnstile widget on the sign-in card. Collapses to nothing until a site
+   key is configured, so the layout is unchanged while it is switched off. */
+.cf-turnstile:empty {
+  display: none;
+}
+
+.cf-turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+}

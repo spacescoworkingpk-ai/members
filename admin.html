@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   </head>
   <body>
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
@@ -19,6 +20,7 @@
         <h1>Spaces Coworking</h1>
         <label>Email<input required id="authEmail" type="email" autocomplete="email" placeholder="staff@spacespk.com"></label>
         <label>Password<input required id="authPassword" type="password" autocomplete="current-password" placeholder="Password"></label>
+        <div class="cf-turnstile" id="turnstileWidget" data-sitekey="" data-action="turnstile-spin-v2" data-callback="onTurnstileToken" data-expired-callback="onTurnstileExpired" data-error-callback="onTurnstileExpired" data-theme="light"></div>
         <button class="primary-button" type="submit">Sign in</button>
         <p class="auth-message" id="authMessage"></p>
         <a href="/" style="color:#007cb5;font-size:13px;font-weight:750;text-align:center;text-decoration:none">View customer website</a>

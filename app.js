@@ -370,10 +370,44 @@ function describeWait(seconds) {
   return `${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
+// Cloudflare Turnstile. The widget hands us a token; Supabase verifies it
+// server-side against Cloudflare, so the secret never touches this code.
+// A token is valid for one use only, which is why every finished attempt
+// resets the widget.
+let turnstileToken = "";
+
+window.onTurnstileToken = (token) => {
+  turnstileToken = token || "";
+};
+
+window.onTurnstileExpired = () => {
+  turnstileToken = "";
+};
+
+function turnstileEnabled() {
+  const widget = document.querySelector("#turnstileWidget");
+  return Boolean(widget && widget.dataset.sitekey);
+}
+
+function resetTurnstile() {
+  turnstileToken = "";
+  if (window.turnstile && turnstileEnabled()) {
+    try {
+      window.turnstile.reset("#turnstileWidget");
+    } catch {
+      // A reset failure is not worth blocking sign-in over; the next page
+      // load issues a fresh token anyway.
+    }
+  }
+}
+
 async function login(email, password) {
   const waiting = lockoutSecondsLeft();
   if (waiting) {
     throw new Error(`Too many failed attempts. Try again in ${describeWait(waiting)}.`);
+  }
+  if (turnstileEnabled() && !turnstileToken) {
+    throw new Error("Please wait a moment for the security check to finish, then sign in again.");
   }
   let response;
   try {
@@ -383,7 +417,11 @@ async function login(email, password) {
         apikey: supabaseConfig.anonKey,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ email: String(email).trim(), password })
+      body: JSON.stringify({
+        email: String(email).trim(),
+        password,
+        ...(turnstileToken ? { gotrue_meta_security: { captcha_token: turnstileToken } } : {})
+      })
     });
   } catch {
     // A network failure is not a failed credential, so it must not count
@@ -391,14 +429,23 @@ async function login(email, password) {
     throw new Error("Could not reach the server. Check the connection and try again.");
   }
   const payload = await response.json().catch(() => ({}));
+  // The token is spent either way, so always fetch a fresh one.
+  resetTurnstile();
   if (!response.ok) {
+    // A rejected captcha is a configuration or timing problem, not a wrong
+    // password, so it must not count towards the lockout or be disguised as
+    // bad credentials.
+    const serverText = `${payload.error_description || ""} ${payload.msg || ""} ${payload.error || ""}`.toLowerCase();
+    if (serverText.includes("captcha")) {
+      throw new Error("The security check did not pass. Wait for it to reload, then sign in again.");
+    }
+    if (response.status === 429) {
+      throw new Error("Too many sign-in attempts have been made. Wait a few minutes and try again.");
+    }
     // Deliberately generic: never reveal whether the email exists, and never
     // echo the server's wording back to an attacker.
     const wait = noteFailedLogin();
     const suffix = wait ? ` Too many attempts - wait ${describeWait(wait)} before trying again.` : "";
-    if (response.status === 429) {
-      throw new Error("Too many sign-in attempts have been made. Wait a few minutes and try again.");
-    }
     throw new Error(`Email or password is incorrect.${suffix}`);
   }
   clearFailedLogins();
