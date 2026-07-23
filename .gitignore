@@ -5,3 +5,8 @@ output/
 .env
 .env.*
 !.env*.example
+
+# Unused source artwork kept locally, not needed by the site or the deploy
+assets/meeting-room-portrait.*
+assets/spaces-black.png
+assets/receipt-reference.png
