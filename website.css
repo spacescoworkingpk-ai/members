@@ -1768,3 +1768,164 @@ body.dialog-open {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- content landing pages (pricing, private offices, etc.) ---------- */
+
+body.content-page {
+  background: var(--porcelain);
+}
+
+/* These pages have no hero photo, so the header sits on the light ground
+   from the start rather than fading in on scroll. */
+.content-page .site-header {
+  position: sticky;
+  background: rgba(245, 247, 246, 0.9);
+  box-shadow: 0 1px 0 var(--hairline);
+  backdrop-filter: blur(14px);
+}
+.content-page .site-header .logo-light { display: none; }
+.content-page .site-header .logo-dark { display: block; }
+.content-page .site-header nav a { color: var(--ink-soft); }
+.content-page .site-header nav a:hover { color: var(--ink); border-bottom-color: var(--hairline); }
+.content-page .site-header nav .brue-nav { color: var(--spruce); }
+.content-page .site-header .header-cta {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--porcelain);
+}
+.content-page .menu-button span { background: var(--ink); }
+
+.page-hero {
+  padding: clamp(48px, 7vw, 90px) 0 clamp(30px, 4vw, 44px);
+}
+.page-hero .breadcrumb {
+  font-size: 13px;
+  color: var(--slate);
+  margin-bottom: 18px;
+}
+.page-hero .breadcrumb a { color: var(--slate); }
+.page-hero .breadcrumb a:hover { color: var(--spruce); }
+.page-hero h1 {
+  font-size: clamp(34px, 5vw, 58px);
+  max-width: 16ch;
+  color: var(--ink);
+}
+.page-hero .lead {
+  margin-top: 20px;
+  font-size: clamp(17px, 1.7vw, 20px);
+  color: var(--ink-soft);
+  max-width: 54ch;
+  line-height: 1.6;
+}
+
+.page-body {
+  padding-bottom: clamp(60px, 8vw, 110px);
+}
+.page-body h2 {
+  margin-top: clamp(40px, 5vw, 60px);
+  font-size: clamp(24px, 2.6vw, 34px);
+  color: var(--ink);
+}
+.page-body p {
+  margin-top: 16px;
+  color: var(--slate);
+  font-size: 16.5px;
+  line-height: 1.7;
+  max-width: 62ch;
+}
+.page-body ul {
+  margin-top: 16px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 62ch;
+}
+.page-body ul li {
+  position: relative;
+  padding-left: 26px;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.page-body ul li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  width: 9px;
+  height: 5px;
+  border-left: 1.8px solid var(--spruce);
+  border-bottom: 1.8px solid var(--spruce);
+  transform: rotate(-45deg);
+}
+
+.page-figure {
+  margin: clamp(28px, 4vw, 44px) 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.page-figure img { width: 100%; height: auto; }
+
+/* Simple price table shared by pricing and plan pages. */
+.price-table {
+  width: 100%;
+  margin-top: 28px;
+  border-collapse: collapse;
+  font-size: 16px;
+}
+.price-table th, .price-table td {
+  text-align: left;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.price-table th {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--slate);
+  font-weight: 600;
+}
+.price-table td:last-child, .price-table th:last-child { text-align: right; white-space: nowrap; }
+.price-table .plan-name { font-weight: 600; color: var(--ink); }
+.price-table .price {
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 19px;
+  color: var(--ink);
+}
+
+.page-cta {
+  margin-top: clamp(44px, 6vw, 72px);
+  padding: clamp(30px, 4vw, 48px);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--porcelain);
+}
+.page-cta h2 { margin: 0; color: #fff; }
+.page-cta p { color: rgba(245, 247, 246, 0.8); max-width: 52ch; }
+.page-cta .page-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 26px;
+}
+.page-cta .light-button { background: #fff; color: var(--ink); }
+.page-cta a.ghost-line {
+  color: var(--porcelain);
+  align-self: center;
+  border-bottom: 1px solid rgba(245, 247, 246, 0.4);
+  padding-bottom: 3px;
+  font-weight: 500;
+}
+
+.related-links {
+  margin-top: clamp(40px, 5vw, 60px);
+  padding-top: 26px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+}
+.related-links span { color: var(--slate); font-size: 14px; }
+.related-links a { color: var(--spruce); font-size: 14px; font-weight: 500; }

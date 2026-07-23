@@ -76,8 +76,14 @@ function showSlide(index) {
   }, 140);
   track("experience_slide", "gallery", { slide: slide.title });
 }
-document.querySelector("[data-slide-prev]").addEventListener("click", () => showSlide(slideIndex - 1));
-document.querySelector("[data-slide-next]").addEventListener("click", () => showSlide(slideIndex + 1));
+// The experience slider only exists on the homepage; guard so the shared
+// script runs cleanly on the content landing pages too.
+const slidePrev = document.querySelector("[data-slide-prev]");
+const slideNext = document.querySelector("[data-slide-next]");
+if (slidePrev && slideNext && experienceImage) {
+  slidePrev.addEventListener("click", () => showSlide(slideIndex - 1));
+  slideNext.addEventListener("click", () => showSlide(slideIndex + 1));
+}
 
 document.querySelectorAll(".membership-summary").forEach((summary) => {
   summary.addEventListener("click", () => {
@@ -104,23 +110,30 @@ document.querySelectorAll("[data-amenity-image]").forEach((button) => {
   button.addEventListener("mouseenter", selectAmenity);
 });
 
+// The visit dialog is homepage-only; the landing pages link to WhatsApp
+// directly instead, so guard the whole block.
 const visitDialog = document.querySelector("#visit-dialog");
-document.querySelectorAll("[data-open-visit]").forEach((button) => button.addEventListener("click", () => {
-  visitDialog.showModal();
-  document.body.classList.add("dialog-open");
-}));
-visitDialog.addEventListener("close", () => document.body.classList.remove("dialog-open"));
-visitDialog.addEventListener("click", (event) => {
-  if (event.target === visitDialog) visitDialog.close();
-});
-document.querySelector("#visit-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  const message = `Hi Spaces, I’d like to plan a visit.\n\nName: ${data.get("name")}\nPhone: ${data.get("phone")}\nPreferred day: ${data.get("day")}\nPeople: ${data.get("people")}\n\nI’d also like to try Brue Coffee and spend a few hours experiencing the workspace.`;
-  track("visit_form_complete", "visit", { people: data.get("people"), day: data.get("day") });
-  window.open(`https://wa.me/923173337756?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-  visitDialog.close();
-});
+if (visitDialog) {
+  document.querySelectorAll("[data-open-visit]").forEach((button) => button.addEventListener("click", () => {
+    visitDialog.showModal();
+    document.body.classList.add("dialog-open");
+  }));
+  visitDialog.addEventListener("close", () => document.body.classList.remove("dialog-open"));
+  visitDialog.addEventListener("click", (event) => {
+    if (event.target === visitDialog) visitDialog.close();
+  });
+  const visitForm = document.querySelector("#visit-form");
+  if (visitForm) {
+    visitForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const message = `Hi Spaces, I’d like to plan a visit.\n\nName: ${data.get("name")}\nPhone: ${data.get("phone")}\nPreferred day: ${data.get("day")}\nPeople: ${data.get("people")}\n\nI’d also like to try Brue Coffee and spend a few hours experiencing the workspace.`;
+      track("visit_form_complete", "visit", { people: data.get("people"), day: data.get("day") });
+      window.open(`https://wa.me/923173337756?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+      visitDialog.close();
+    });
+  }
+}
 
 const guide = document.querySelector("#space-guide");
 const guideLauncher = document.querySelector(".guide-launcher");
@@ -308,30 +321,33 @@ function closeGuide() {
   guideLauncher.focus();
 }
 
-guideLauncher.addEventListener("click", () => guide.hidden ? openGuide() : closeGuide());
-guideClose.addEventListener("click", closeGuide);
-guideReplies.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-guide-choice]");
-  if (!button) return;
-  handleGuideChoice(button.dataset.guideChoice, button.textContent.trim());
-});
-guideMessages.addEventListener("click", (event) => {
-  const link = event.target.closest("[data-guide-whatsapp]");
-  if (link) track("guide_whatsapp", "guide", { recommendation: link.dataset.guideWhatsapp, context: guideContext });
-});
-guideForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const question = guideQuestion.value.trim();
-  if (!question) return;
-  addGuideMessage(question, "visitor");
-  guideQuestion.value = "";
-  addGuideMessage(answerGuideQuestion(question));
-  setGuideReplies(guideChoices.followup);
-  track("guide_answer", "guide", { answer: "typed" });
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !guide.hidden) closeGuide();
-});
+// The plan guide is homepage-only; guard so the landing pages don't error.
+if (guide && guideLauncher && guideClose && guideReplies && guideMessages && guideForm) {
+  guideLauncher.addEventListener("click", () => guide.hidden ? openGuide() : closeGuide());
+  guideClose.addEventListener("click", closeGuide);
+  guideReplies.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-guide-choice]");
+    if (!button) return;
+    handleGuideChoice(button.dataset.guideChoice, button.textContent.trim());
+  });
+  guideMessages.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-guide-whatsapp]");
+    if (link) track("guide_whatsapp", "guide", { recommendation: link.dataset.guideWhatsapp, context: guideContext });
+  });
+  guideForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = guideQuestion.value.trim();
+    if (!question) return;
+    addGuideMessage(question, "visitor");
+    guideQuestion.value = "";
+    addGuideMessage(answerGuideQuestion(question));
+    setGuideReplies(guideChoices.followup);
+    track("guide_answer", "guide", { answer: "typed" });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !guide.hidden) closeGuide();
+  });
+}
 
 const analyticsSessionKey = "spaces-public-visit";
 let analyticsSession = sessionStorage.getItem(analyticsSessionKey);
