@@ -26,7 +26,10 @@ if [ "$#" -gt 0 ]; then
     esac
   done
 else
-  mapfile -t urls < <(curl -s "https://${HOST}/sitemap.xml" | grep -oE 'https://[^<]+')
+  # Portable read (macOS ships bash 3.2, which has no mapfile).
+  while IFS= read -r line; do
+    [ -n "$line" ] && urls+=("$line")
+  done < <(curl -s "https://${HOST}/sitemap.xml" | grep -oE 'https://[^<]+')
 fi
 
 if [ "${#urls[@]}" -eq 0 ]; then
