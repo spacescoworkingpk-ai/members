@@ -152,8 +152,8 @@
                   <option value="abrar_owner">Abrar / Owner</option>
                 </select>
               </label>
-              <label>Rate each<input name="rate" id="quickRate" type="number" min="0" step="100"></label>
-              <label>Total amount<input name="total" id="quickTotal" type="number" min="0" step="100"></label>
+              <label>Rate each<input name="rate" id="quickRate" type="number" min="0" step="1"></label>
+              <label>Total amount<input name="total" id="quickTotal" type="number" min="0" step="1"></label>
               <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Purpose, company, room timing, staff notes"></textarea></label>
             </div>
             <div class="rate-summary" id="quickInvoiceSummary"></div>
@@ -222,7 +222,7 @@
                   <option value="petty_cash">Cash / Petty cash</option>
                   <option value="business_card">Business debit card</option>
                 </select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="1"></label>
                 <label>Paid to<input name="personName" placeholder="Vendor / person"></label>
                 <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Bill number, reason, staff notes"></textarea></label>
               </div>
@@ -240,7 +240,7 @@
                 <label>Date<input required name="entryDate" type="date"></label>
                 <label>Source<select required name="source" id="receivingSource"></select></label>
                 <label>Payment source<select required name="paymentSource" id="receivingPaymentSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="1"></label>
                 <label>Received from<input required name="personName" placeholder="Name who paid / Abrar"></label>
                 <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Member plan, transfer note, receipt reference"></textarea></label>
               </div>
@@ -331,7 +331,7 @@
                 <label>Date<input required name="entryDate" type="date"></label>
                 <label>Category<select required name="category" id="ownerExpenseCategory"></select></label>
                 <label>Payment source<select required name="paymentSource" id="ownerExpenseSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="1"></label>
                 <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Reason, vendor, transfer details"></textarea></label>
                 <label class="span-two">Attachment note<input name="attachment" placeholder="Bill link, file name, or WhatsApp reference"></label>
               </div>
@@ -349,7 +349,7 @@
                 <label>Date<input required name="entryDate" type="date"></label>
                 <label>Source<select required name="source" id="ownerReceivingSource"></select></label>
                 <label>Payment source<select required name="paymentSource" id="ownerReceivingPaymentSource"></select></label>
-                <label>Amount<input required name="amount" type="number" min="0" step="100"></label>
+                <label>Amount<input required name="amount" type="number" min="0" step="1"></label>
                 <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Received from staff, bank adjustment, other note"></textarea></label>
               </div>
               <div class="modal-actions inline-actions">
@@ -517,10 +517,10 @@
           <label>Plan<select required name="plan" id="planSelect"></select></label>
           <label>Seats<input required name="seats" type="number" min="1" value="1"></label>
           <label class="owner-only">Standard plan rate<input readonly name="basePlanPrice" type="number" min="0"></label>
-          <label class="owner-only">Offered monthly rate<input name="monthlyFee" type="number" min="0" step="500"></label>
+          <label class="owner-only">Offered monthly rate<input name="monthlyFee" type="number" min="0" step="1"></label>
           <label>Joining date<input required name="joiningDate" type="date"></label>
           <label>First renewal<input readonly name="renewalDate" type="date"><span class="form-hint">Set automatically from joining date</span></label>
-          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="500" value="0"></label>
+          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="1" value="0"></label>
           <label class="owner-only">Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
           <label class="span-two">Notes<textarea name="notes" rows="2" placeholder="Access card, office number, custom terms"></textarea></label>
         </div>
@@ -556,8 +556,8 @@
           <label>Member<input readonly name="memberName"></label>
           <label>Plan<input readonly name="plan"></label>
           <label>Seats<input required name="seats" type="number" min="1"></label>
-          <label>Standard price<input required name="standardPrice" type="number" min="0" step="500"></label>
-          <label>Invoice amount<input required name="invoiceAmount" type="number" min="0" step="500"></label>
+          <label>Standard price<input required name="standardPrice" type="number" min="0" step="1"></label>
+          <label>Invoice amount<input required name="invoiceAmount" type="number" min="0" step="1"></label>
           <label>Membership valid till<input required name="validTill" type="date"></label>
           <label class="span-two">Discount / edit note<input name="editNote" placeholder="Discount approved by, temporary rate, adjustment details"></label>
         </div>
@@ -591,7 +591,7 @@
               <option value="cancelled">Archived</option>
             </select>
           </label>
-          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="500"></label>
+          <label class="owner-only">Deposit<input name="deposit" type="number" min="0" step="1"></label>
           <label class="owner-only span-two">Discount reason<input name="discountReason" placeholder="Intro offer, referral, special approval"></label>
           <label class="span-two">Notes<textarea name="notes" rows="2"></textarea></label>
         </div>

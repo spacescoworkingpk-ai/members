@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api/
 
-Sitemap: https://members-ivory.vercel.app/sitemap.xml
+Sitemap: https://spacespk.com/sitemap.xml
