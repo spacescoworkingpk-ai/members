@@ -1728,3 +1728,43 @@ body.dialog-open {
     max-height: 300px;
   }
 }
+
+/* ---------- FAQ: plain visible text, which search engines read directly ---------- */
+
+.faq {
+  padding-block: clamp(70px, 8vw, 120px);
+}
+
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(24px, 3vw, 44px) clamp(32px, 5vw, 72px);
+  margin-top: clamp(34px, 4vw, 52px);
+}
+
+.faq-item h3 {
+  font-size: clamp(18px, 1.8vw, 21px);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.faq-item p {
+  margin-top: 9px;
+  color: var(--slate);
+  font-size: 15px;
+  line-height: 1.65;
+  max-width: 46ch;
+}
+
+.location-context {
+  margin-top: 14px;
+  color: var(--slate);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+@media (max-width: 820px) {
+  .faq-grid {
+    grid-template-columns: 1fr;
+  }
+}

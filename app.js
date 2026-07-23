@@ -1120,7 +1120,7 @@ function renderWebsiteAnalytics() {
 
   const journey = [
     ["home", "Home"], ["coffee", "Brue Coffee"], ["gallery", "Spaces experience"], ["plans", "Memberships"],
-    ["amenities", "Amenities"], ["visit", "Visit invitation"], ["location", "Location"]
+    ["amenities", "Amenities"], ["faq", "Questions"], ["visit", "Visit invitation"], ["location", "Location"]
   ].map(([key, label]) => ({ key, label, visitors: unique(websiteEvents.filter((event) => event.event_name === "section_view" && event.section === key)) }));
   const maxVisitors = Math.max(1, ...journey.map((item) => item.visitors));
   els.webJourney.innerHTML = journey.map((item, index) => {
