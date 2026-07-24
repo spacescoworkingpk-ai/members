@@ -93,22 +93,61 @@ document.querySelectorAll(".membership-summary").forEach((summary) => {
   });
 });
 
+// Touch-first horizontal swipe helper: fires onLeft/onRight only on a clear
+// horizontal gesture, so vertical page scrolling is never hijacked. Listeners
+// stay passive (no preventDefault) so scrolling remains smooth.
+function addSwipe(element, { onLeft, onRight, threshold = 45 } = {}) {
+  let startX = 0, startY = 0, tracking = false;
+  element.addEventListener("touchstart", (event) => {
+    startX = event.changedTouches[0].clientX;
+    startY = event.changedTouches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  element.addEventListener("touchend", (event) => {
+    if (!tracking) return;
+    tracking = false;
+    const deltaX = event.changedTouches[0].clientX - startX;
+    const deltaY = event.changedTouches[0].clientY - startY;
+    if (Math.abs(deltaX) < threshold || Math.abs(deltaX) < Math.abs(deltaY)) return;
+    (deltaX < 0 ? onLeft : onRight)?.();
+  }, { passive: true });
+}
+
+// Amenities: a tap/swipe photo gallery. Hover-to-preview is kept only for
+// pointers that actually hover (laptops); on a phone you tap the pills or swipe
+// the photo, so nothing depends on a mouse hovering.
 const amenityPhoto = document.querySelector("[data-amenity-photo]");
-document.querySelectorAll("[data-amenity-image]").forEach((button) => {
-  const selectAmenity = () => {
-    document.querySelectorAll("[data-amenity-image]").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
+const amenityButtons = [...document.querySelectorAll("[data-amenity-image]")];
+if (amenityPhoto && amenityButtons.length) {
+  const canHover = window.matchMedia("(hover: hover)").matches;
+  let amenityIndex = 0;
+  const selectAmenity = (index, bringIntoView = false) => {
+    amenityIndex = (index + amenityButtons.length) % amenityButtons.length;
+    const button = amenityButtons[amenityIndex];
+    amenityButtons.forEach((item) => {
+      const on = item === button;
+      item.classList.toggle("active", on);
+      item.setAttribute("aria-selected", String(on));
+    });
     amenityPhoto.style.opacity = "0";
     window.setTimeout(() => {
       amenityPhoto.src = button.dataset.amenityImage;
       amenityPhoto.alt = button.dataset.amenityAlt;
       amenityPhoto.style.opacity = "1";
     }, 120);
+    if (bringIntoView) button.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
     track("amenity_view", "amenities", { amenity: button.textContent.trim() });
   };
-  button.addEventListener("click", selectAmenity);
-  button.addEventListener("mouseenter", selectAmenity);
-});
+  amenityButtons.forEach((button, index) => {
+    button.setAttribute("aria-selected", String(index === 0));
+    button.addEventListener("click", () => selectAmenity(index));
+    if (canHover) button.addEventListener("mouseenter", () => selectAmenity(index));
+  });
+  addSwipe(amenityPhoto, {
+    onLeft: () => selectAmenity(amenityIndex + 1, true),
+    onRight: () => selectAmenity(amenityIndex - 1, true)
+  });
+}
 
 // The visit dialog is homepage-only; the landing pages link to WhatsApp
 // directly instead, so guard the whole block.
@@ -418,20 +457,61 @@ if (planViewport && planTrack) {
     if (event.key === "ArrowRight") { event.preventDefault(); goToPlan(planIndex + 1); }
   });
 
-  // Swipe: only act on a clear horizontal gesture so vertical page scrolling
-  // is never hijacked.
-  let touchStartX = 0;
-  let touchStartY = 0;
-  planViewport.addEventListener("touchstart", (event) => {
-    touchStartX = event.changedTouches[0].clientX;
-    touchStartY = event.changedTouches[0].clientY;
-  }, { passive: true });
-  planViewport.addEventListener("touchend", (event) => {
-    const deltaX = event.changedTouches[0].clientX - touchStartX;
-    const deltaY = event.changedTouches[0].clientY - touchStartY;
-    if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY)) return;
-    goToPlan(planIndex + (deltaX < 0 ? 1 : -1));
-  }, { passive: true });
+  // Live drag: the track follows the finger (or mouse) 1:1, resists past the
+  // ends, and snaps to the nearest slide on release — the direct-manipulation
+  // feel of a native app. Pointer events cover touch and mouse alike; the CSS
+  // `touch-action: pan-y` leaves vertical page scrolling with the browser, which
+  // arrives here as a pointercancel and simply snaps back.
+  const swipeHint = document.querySelector(".plan-swipe-hint");
+  const hideSwipeHint = () => swipeHint && swipeHint.classList.add("is-hidden");
+  let dragStartX = 0, dragStartY = 0, dragDelta = 0;
+  let dragging = false, axisLocked = false, horizontal = false, activePointer = null;
+
+  const applyDragOffset = (px) => {
+    planTrack.style.transform = `translateX(calc(-${planIndex * 100}% + ${px}px))`;
+  };
+
+  planViewport.addEventListener("dragstart", (event) => event.preventDefault());
+  planViewport.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    dragging = true; axisLocked = false; horizontal = false; dragDelta = 0;
+    dragStartX = event.clientX; dragStartY = event.clientY; activePointer = event.pointerId;
+    planTrack.style.transition = "none";
+  });
+  planViewport.addEventListener("pointermove", (event) => {
+    if (!dragging || event.pointerId !== activePointer) return;
+    const dx = event.clientX - dragStartX;
+    const dy = event.clientY - dragStartY;
+    if (!axisLocked) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      axisLocked = true;
+      horizontal = Math.abs(dx) > Math.abs(dy);
+      if (horizontal) {
+        planViewport.classList.add("dragging");
+        hideSwipeHint();
+        try { planViewport.setPointerCapture(activePointer); } catch (_) {}
+      }
+    }
+    if (!horizontal) return;
+    event.preventDefault();
+    const atStart = planIndex === 0 && dx > 0;
+    const atEnd = planIndex === planSlides.length - 1 && dx < 0;
+    dragDelta = (atStart || atEnd) ? dx * 0.32 : dx;
+    applyDragOffset(dragDelta);
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    planViewport.classList.remove("dragging");
+    planTrack.style.transition = "";
+    const width = planViewport.clientWidth;
+    if (horizontal && width && dragDelta <= -width * 0.18) goToPlan(planIndex + 1);
+    else if (horizontal && width && dragDelta >= width * 0.18) goToPlan(planIndex - 1);
+    else goToPlan(planIndex, false);
+    dragDelta = 0;
+  };
+  planViewport.addEventListener("pointerup", endDrag);
+  planViewport.addEventListener("pointercancel", endDrag);
 
   goToPlan(0, false);
 }

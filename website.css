@@ -735,6 +735,73 @@ button {
   transition: opacity 420ms var(--ease);
 }
 
+/* On touch screens the vertical text list becomes a swipeable pill row under
+   the photo: you tap a pill or swipe the photo itself, so nothing depends on
+   hovering a mouse. */
+@media (max-width: 760px) {
+  .amenity-layout {
+    display: flex;
+    flex-direction: column-reverse;
+    /* The desktop rule centres items on the cross axis, which in a column
+       would shrink the photo to its aspect width instead of filling. */
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .amenity-photo img {
+    height: 58vw;
+    min-height: 240px;
+    max-height: 360px;
+  }
+
+  .amenity-list {
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    /* A flex item's default min-width:auto would size this to its content and
+       push the whole page sideways; 0 lets it clip and scroll instead. */
+    min-width: 0;
+    /* Bleed to the screen edges (.shell keeps a 24px gutter) so the row
+       visibly runs off-screen and reads as scrollable. */
+    width: calc(100% + 48px);
+    margin-inline: -24px;
+    padding-inline: 24px;
+    scroll-padding-inline: 24px;
+  }
+
+  .amenity-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .amenity-list button {
+    flex: none;
+    scroll-snap-align: center;
+    padding: 10px 16px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background-color: var(--white);
+    font-size: 14px;
+    line-height: 1.25;
+    white-space: nowrap;
+    transition: background-color 240ms var(--ease), border-color 240ms var(--ease),
+      color 240ms var(--ease);
+  }
+
+  .amenity-list button::before {
+    display: none;
+  }
+
+  .amenity-list button.active {
+    padding-left: 16px;
+    background-color: var(--ink);
+    border-color: var(--ink);
+    color: var(--porcelain);
+  }
+}
+
 /* ---------- invitation ---------- */
 
 .invitation {
@@ -1575,6 +1642,17 @@ body.dialog-open {
   overflow: hidden;
   border-radius: var(--radius);
   touch-action: pan-y;
+  cursor: grab;
+}
+
+.plan-viewport.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.plan-viewport img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .plan-viewport:focus-visible {
@@ -1716,6 +1794,35 @@ body.dialog-open {
 .plan-dots button[aria-selected="true"] {
   background: var(--spruce);
   transform: scale(1.35);
+}
+
+/* Swipe affordance — only shown on touch devices, where hover hints can't be.
+   Fades out for good the first time the carousel is dragged. */
+.plan-swipe-hint {
+  display: none;
+  width: max-content;
+  margin: 14px auto 0;
+  padding: 7px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--white);
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 500;
+  transition: opacity 400ms var(--ease), transform 400ms var(--ease);
+}
+
+.plan-swipe-hint::before { content: "\2190\00a0\00a0"; }
+.plan-swipe-hint::after { content: "\00a0\00a0\2192"; }
+
+.plan-swipe-hint.is-hidden {
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .plan-swipe-hint { display: block; }
 }
 
 @media (max-width: 860px) {
