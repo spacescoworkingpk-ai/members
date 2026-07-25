@@ -2710,9 +2710,6 @@ function openInvoice(member, override = {}) {
           </div>
         </div>
         <div class="receipt-contact">
-          <strong>${business.phone}</strong><br>
-          ${business.email}<br>
-          ${business.address}
           <span class="receipt-id">
             ${invoiceLabel}
             <strong>${invoiceId}</strong>
@@ -2781,9 +2778,7 @@ function openInvoice(member, override = {}) {
         </div>
         <div class="receipt-thanks">
           <strong>Thank you!</strong>
-          <span>${business.shortAddress}</span>
           <span>${business.landline}</span>
-          <div class="receipt-site">${business.website}</div>
         </div>
       </footer>
     </div>

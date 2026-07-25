@@ -1212,61 +1212,37 @@ label textarea {
   background: #eef2f4;
 }
 
+/* The preview sits on the same letterhead artwork the PDF is drawn on, so what
+   is on screen is what the client receives. A4 proportions and the top inset
+   mirror lib/whatsapp.js, which starts its content at y=168 of 841.89. */
 .receipt-box {
   position: relative;
   width: min(760px, 100%);
-  min-height: 980px;
+  /* A4 is the floor, not a cap: a receipt with many plan lines grows taller and
+     the artwork stretches with it rather than clipping the totals. */
+  min-height: min(1074px, 141.4vw);
   margin: 0 auto;
-  overflow: hidden;
   border: 1px solid #d7dde1;
   border-radius: 8px;
-  padding: 34px 34px 28px;
-  background: #ffffff;
+  /* Clears the letterhead's logo and contact block at the top and its wave at
+     the foot, mirroring the y=168 start in lib/whatsapp.js. */
+  padding: 27% 9.4% 12%;
+  background: #ffffff url("assets/letterhead.jpg") center / 100% 100% no-repeat;
   box-shadow: 0 18px 45px rgba(20, 24, 26, 0.12);
 }
 
-.receipt-box::before,
-.receipt-box::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.receipt-box::before {
-  top: 0;
-  right: -22px;
-  width: 82px;
-  height: 180px;
-  border-bottom-left-radius: 54px;
-  background: linear-gradient(160deg, #343434, #111111);
-}
-
-.receipt-box::after {
-  left: -32px;
-  bottom: -48px;
-  width: 470px;
-  height: 118px;
-  border-top-right-radius: 80px;
-  background: var(--brand);
-}
-
+/* The letterhead already carries the logo, phone, email and address, so the
+   preview must not draw its own set on top of them. */
 .receipt-brand-row {
   position: relative;
   z-index: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 28px;
 }
 
 .receipt-logo {
-  width: 126px;
-  height: auto;
+  display: none;
 }
 
 .receipt-contact {
-  max-width: 270px;
-  padding-right: 42px;
   color: #50575b;
   font-size: 13px;
   line-height: 1.55;
@@ -1901,20 +1877,10 @@ label textarea {
     padding: 10px;
   }
 
+  /* Percentage padding keeps the content inside the letterhead's clear middle
+     at any width, so this only needs to relax the minimum height. */
   .receipt-box {
     min-height: 0;
-    padding: 18px;
-  }
-
-  .receipt-box::before {
-    right: -28px;
-    width: 70px;
-    height: 142px;
-  }
-
-  .receipt-box::after {
-    width: 270px;
-    height: 78px;
   }
 
   .receipt-brand-row {
