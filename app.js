@@ -126,6 +126,7 @@ let currentReceiptShare = {
   fileName: "spaces-receipt.pdf",
   receipt: null,
   memberId: null,
+  whatsappUrl: "",
   pdfPromise: null
 };
 
@@ -258,11 +259,10 @@ const els = {
   cancelPaymentSource: document.querySelector("#cancelPaymentSource"),
   receiptPreview: document.querySelector("#receiptPreview"),
   whatsappReceipt: document.querySelector("#whatsappReceipt"),
-  manualWhatsappReceipt: document.querySelector("#manualWhatsappReceipt"),
   receiptSendStatus: document.querySelector("#receiptSendStatus"),
   closeReceipt: document.querySelector("#closeReceipt"),
   printReceipt: document.querySelector("#printReceipt"),
-  downloadReceipt: document.querySelector("#downloadReceipt"),
+  viewReceipt: document.querySelector("#viewReceipt"),
   exportCsv: document.querySelector("#exportCsv")
 };
 
@@ -2788,330 +2788,15 @@ function openInvoice(member, override = {}) {
       </footer>
     </div>
   `;
-  const clientWhatsapp = whatsappPhone(member.phone);
-  els.manualWhatsappReceipt.href = `https://wa.me/${clientWhatsapp}?text=${encodeURIComponent(message)}`;
-  els.manualWhatsappReceipt.hidden = !clientWhatsapp;
+  currentReceiptShare.whatsappUrl = whatsappPhone(member.phone)
+    ? `https://wa.me/${whatsappPhone(member.phone)}?text=${encodeURIComponent(message)}`
+    : "";
   setReceiptSendStatus("");
-  els.whatsappReceipt.textContent = "Share on WhatsApp";
+  els.whatsappReceipt.textContent = "Share PDF";
   // Start building the PDF while the receipt is being reviewed so Share/Save
   // respond instantly instead of waiting on the API round trip.
   prefetchReceiptPdf();
   els.receiptDialog.showModal();
-}
-
-function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  let line = "";
-  let cursorY = y;
-  words.forEach((word) => {
-    const testLine = line ? `${line} ${word}` : word;
-    if (ctx.measureText(testLine).width > maxWidth && line) {
-      ctx.fillText(line, x, cursorY);
-      line = word;
-      cursorY += lineHeight;
-    } else {
-      line = testLine;
-    }
-  });
-  if (line) ctx.fillText(line, x, cursorY);
-  return cursorY + lineHeight;
-}
-
-function collectReceiptStyles() {
-  return [...document.styleSheets].map((sheet) => {
-    try {
-      return [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
-    } catch {
-      return "";
-    }
-  }).join("\n");
-}
-
-async function inlineReceiptImages(root) {
-  const images = [...root.querySelectorAll("img")];
-  await Promise.all(images.map(async (image) => {
-    try {
-      const source = image.getAttribute("src");
-      if (!source || source.startsWith("data:")) return;
-      const response = await fetch(new URL(source, window.location.href));
-      const blob = await response.blob();
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      image.setAttribute("src", dataUrl);
-    } catch (error) {
-      console.warn("Could not inline receipt image", error);
-    }
-  }));
-}
-
-function canvasBlob(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("Could not generate receipt image."));
-      }
-    }, "image/png", 0.96);
-  });
-}
-
-async function receiptDomSnapshotFile() {
-  const element = els.receiptPreview.querySelector(".receipt-box");
-  if (!element) throw new Error("Receipt preview is not ready.");
-
-  const clone = element.cloneNode(true);
-  await inlineReceiptImages(clone);
-
-  const rect = element.getBoundingClientRect();
-  const padding = 32;
-  const width = Math.ceil(rect.width || element.offsetWidth || 760);
-  const height = Math.ceil(element.scrollHeight || rect.height || 980);
-  clone.style.margin = `${padding}px auto`;
-  clone.style.width = `${width}px`;
-  clone.style.maxWidth = "none";
-
-  const serialized = new XMLSerializer().serializeToString(clone);
-  const styles = collectReceiptStyles();
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width + padding * 2}" height="${height + padding * 2}">
-      <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml" class="receipt-share-capture">
-          <style>
-            ${styles}
-            .receipt-share-capture {
-              width: ${width + padding * 2}px;
-              min-height: ${height + padding * 2}px;
-              overflow: hidden;
-              background: #eef2f4;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            .receipt-share-capture .receipt-box {
-              box-sizing: border-box;
-            }
-          </style>
-          ${serialized}
-        </div>
-      </foreignObject>
-    </svg>
-  `;
-
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-  try {
-    const image = new Image();
-    image.decoding = "async";
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = reject;
-      image.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    const scale = Math.min(window.devicePixelRatio || 2, 3);
-    canvas.width = (width + padding * 2) * scale;
-    canvas.height = (height + padding * 2) * scale;
-    const ctx = canvas.getContext("2d");
-    ctx.scale(scale, scale);
-    ctx.fillStyle = "#eef2f4";
-    ctx.fillRect(0, 0, width + padding * 2, height + padding * 2);
-    ctx.drawImage(image, 0, 0);
-    const blob = await canvasBlob(canvas);
-    return new File([blob], currentReceiptShare.fileName, { type: "image/png" });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function receiptPreviewFile() {
-  try {
-    return await receiptDomSnapshotFile();
-  } catch (error) {
-    console.warn("Receipt DOM snapshot failed, using fallback image", error);
-    return receiptCanvasFallbackFile();
-  }
-}
-
-function receiptCanvasFallbackFile() {
-  const receipt = currentReceiptShare.receipt;
-  if (!receipt) throw new Error("No receipt is open.");
-
-  const canvas = document.createElement("canvas");
-  const scale = Math.min(window.devicePixelRatio || 2, 3);
-  const width = 900;
-  const height = 1200;
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(scale, scale);
-
-  ctx.fillStyle = "#eef2f4";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
-  ctx.shadowColor = "rgba(20, 24, 26, 0.16)";
-  ctx.shadowBlur = 24;
-  ctx.shadowOffsetY = 12;
-  ctx.fillRect(54, 34, 792, 1118);
-  ctx.shadowColor = "transparent";
-
-  ctx.fillStyle = "#202020";
-  ctx.beginPath();
-  ctx.roundRect(742, 34, 104, 210, 0);
-  ctx.fill();
-  ctx.fillStyle = "#1197d5";
-  ctx.beginPath();
-  ctx.roundRect(54, 1038, 500, 114, 0);
-  ctx.fill();
-
-  ctx.save();
-  ctx.translate(88, 78);
-  ctx.rotate(0.02);
-  ctx.fillStyle = "#1197d5";
-  ctx.beginPath();
-  ctx.roundRect(0, 0, 48, 110, 18);
-  ctx.fill();
-  ctx.fillStyle = "#232323";
-  ctx.beginPath();
-  ctx.roundRect(54, 50, 48, 110, 18);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.fillStyle = "#202020";
-  ctx.font = "900 48px Arial, sans-serif";
-  ctx.fillText("spaces", 210, 135);
-  ctx.fillStyle = "#1197d5";
-  ctx.beginPath();
-  ctx.arc(405, 122, 8, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#1197d5";
-  ctx.font = "800 34px Arial, sans-serif";
-  ctx.fillText(receipt.invoiceTitle, 88, 230);
-
-  ctx.fillStyle = "#4d555a";
-  ctx.font = "600 17px Arial, sans-serif";
-  ctx.fillText(`${receipt.invoiceLabel} ${receipt.invoiceId}`, 610, 100);
-  ctx.fillText(business.phone, 610, 132);
-  ctx.fillText(business.email, 610, 162);
-  drawWrappedText(ctx, business.address, 610, 192, 190, 24);
-
-  ctx.fillStyle = "#222222";
-  ctx.font = "800 18px Arial, sans-serif";
-  ctx.fillText(`${receipt.customerLabel}: ${receipt.customerName}`, 88, 282);
-  ctx.font = "600 16px Arial, sans-serif";
-  ctx.fillStyle = "#4d555a";
-  ctx.fillText(`Contact: ${receipt.phone || "-"}`, 88, 314);
-  ctx.fillText(`${receipt.issuedDateLabel}: ${formatDate(receipt.issuedDate)}`, 88, 346);
-
-  const tableX = 88;
-  const tableY = 430;
-  const tableW = 724;
-  ctx.fillStyle = "#202020";
-  ctx.fillRect(tableX, tableY, tableW, 54);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "800 14px Arial, sans-serif";
-  ctx.fillText("DESCRIPTION", tableX + 22, tableY + 34);
-  ctx.fillText("QTY.", tableX + 430, tableY + 34);
-  ctx.fillText("PRICE", tableX + 522, tableY + 34);
-  ctx.fillText("AMOUNT", tableX + 626, tableY + 34);
-
-  const fallbackLines = receipt.lines?.length ? receipt.lines : [{
-    description: receipt.description,
-    quantity: receipt.quantity,
-    unitPrice: receipt.unitPrice,
-    amount: receipt.amount
-  }];
-  const rowHeight = 72;
-  const tableBodyHeight = Math.max(110, fallbackLines.length * rowHeight);
-  ctx.strokeStyle = "#d7dde1";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(tableX, tableY + 54, tableW, tableBodyHeight);
-  ctx.fillStyle = "#222222";
-  ctx.font = "700 16px Arial, sans-serif";
-  fallbackLines.forEach((line, index) => {
-    const rowY = tableY + 96 + index * rowHeight;
-    if (index > 0) {
-      ctx.strokeStyle = "#edf1f3";
-      ctx.beginPath();
-      ctx.moveTo(tableX, tableY + 54 + index * rowHeight);
-      ctx.lineTo(tableX + tableW, tableY + 54 + index * rowHeight);
-      ctx.stroke();
-      ctx.fillStyle = "#222222";
-    }
-    drawWrappedText(ctx, line.description, tableX + 22, rowY, 350, 22);
-    ctx.fillText(String(line.quantity).padStart(2, "0"), tableX + 438, rowY);
-    ctx.fillText(Number(line.unitPrice || 0).toLocaleString("en-PK"), tableX + 522, rowY);
-    ctx.fillText(Number(line.amount || 0).toLocaleString("en-PK"), tableX + 632, rowY);
-  });
-
-  let noteY = tableY + 94 + tableBodyHeight;
-  ctx.font = "600 15px Arial, sans-serif";
-  ctx.fillStyle = "#4d555a";
-  receipt.noteRows.forEach((row) => {
-    noteY = drawWrappedText(ctx, row, tableX + 22, noteY, 680, 22);
-  });
-
-  let totalY = Math.max(760, noteY + 24);
-  const labelX = 530;
-  const valueX = 748;
-  ctx.font = "700 18px Arial, sans-serif";
-  ctx.fillStyle = "#4d555a";
-  if (receipt.discount) {
-    ctx.fillText("Standard Rate", labelX, totalY);
-    ctx.fillText(receipt.standardPrice.toLocaleString("en-PK"), valueX, totalY);
-    totalY += 34;
-    ctx.fillText("Discount", labelX, totalY);
-    ctx.fillText(`- ${receipt.discount.toLocaleString("en-PK")}`, valueX, totalY);
-    totalY += 42;
-  }
-  ctx.fillStyle = "#232323";
-  ctx.fillText("Subtotal", labelX, totalY);
-  ctx.fillText(receipt.amount.toLocaleString("en-PK"), valueX, totalY);
-  totalY += 38;
-  ctx.fillText("Tax", labelX, totalY);
-  ctx.fillText(receipt.tax.toLocaleString("en-PK"), valueX, totalY);
-  totalY += 24;
-  ctx.strokeStyle = "#aab0c9";
-  ctx.beginPath();
-  ctx.moveTo(labelX, totalY);
-  ctx.lineTo(812, totalY);
-  ctx.stroke();
-  totalY += 40;
-  ctx.font = "900 24px Arial, sans-serif";
-  ctx.fillText("Total", labelX, totalY);
-  ctx.fillText(receipt.total.toLocaleString("en-PK"), valueX, totalY);
-
-  ctx.fillStyle = "#222222";
-  ctx.font = "700 17px Arial, sans-serif";
-  drawWrappedText(ctx, receipt.validText, 88, 974, 360, 25);
-  ctx.strokeStyle = "#333333";
-  ctx.setLineDash([6, 6]);
-  ctx.beginPath();
-  ctx.moveTo(88, 1010);
-  ctx.lineTo(390, 1010);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.font = "900 15px Arial, sans-serif";
-  ctx.fillText("Spaces Representative", 88, 1042);
-
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#222222";
-  ctx.font = "900 30px Arial, sans-serif";
-  ctx.fillText("Thank you!", 812, 974);
-  ctx.font = "600 16px Arial, sans-serif";
-  ctx.fillText(business.shortAddress.replace("<br>", " "), 812, 1010);
-  ctx.fillText(business.landline, 812, 1040);
-  ctx.fillStyle = "#1197d5";
-  ctx.font = "800 17px Arial, sans-serif";
-  ctx.fillText(business.website, 812, 1098);
-  ctx.textAlign = "left";
-
-  return canvasBlob(canvas).then((blob) => new File([blob], currentReceiptShare.fileName, { type: "image/png" }));
 }
 
 function setReceiptSendStatus(message, type = "") {
@@ -3168,41 +2853,83 @@ function downloadFile(file) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// Opens the receipt PDF in its own tab. From there the browser's own viewer
+// gives Save and Share, which is what "View PDF" is for.
+async function viewCurrentReceipt() {
+  if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
+  // The tab has to be opened synchronously, while the click is still the
+  // current user gesture — opening it after the await gets blocked as a popup.
+  const tab = window.open("", "_blank");
+  els.viewReceipt.disabled = true;
+  setReceiptSendStatus("Opening the PDF...", "busy");
+  try {
+    const file = await receiptPdfFile();
+    const url = URL.createObjectURL(file);
+    if (tab) {
+      tab.location = url;
+    } else {
+      // Popup blocked: fall back to a same-tab download so the click is never
+      // silently lost.
+      downloadFile(file);
+      setReceiptSendStatus("Your browser blocked the new tab, so the PDF was downloaded instead.", "success");
+      return;
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setReceiptSendStatus("PDF opened in a new tab. Use the viewer's own Save or Share from there.", "success");
+  } catch (error) {
+    tab?.close();
+    setReceiptSendStatus(`Could not open the PDF: ${error.message}`, "error");
+    showToast("Could not open PDF", error.message, "error");
+    throw error;
+  } finally {
+    els.viewReceipt.disabled = false;
+  }
+}
+
 async function sendCurrentReceipt() {
   if (!currentReceiptShare.receipt) throw new Error("No receipt is open.");
+  const clientName = currentReceiptShare.receipt?.customerName || "the customer";
+  const whatsappUrl = currentReceiptShare.whatsappUrl;
+  const canNativeShare = Boolean(navigator.canShare?.({ files: [new File([], "x.pdf", { type: "application/pdf" })] }));
+
+  // On a phone the OS share sheet can attach the file straight into a chat, so
+  // no browser tab is needed. Everywhere else WhatsApp Web cannot be handed a
+  // file, so the chat is opened and the PDF saved for a one-step attach — and
+  // that window must be claimed now, during the click, or it gets blocked.
+  const chatWindow = canNativeShare || !whatsappUrl ? null : window.open("", "_blank");
+
   const originalText = els.whatsappReceipt.textContent;
   els.whatsappReceipt.disabled = true;
   els.whatsappReceipt.textContent = "Preparing...";
   setReceiptSendStatus("Preparing the PDF receipt...", "busy");
 
-  const clientName = currentReceiptShare.receipt?.customerName || "the customer";
   try {
     const file = await receiptPdfFile();
-    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      await navigator.share({
-        title: "Spaces Coworking receipt",
-        text: currentReceiptShare.message,
-        files: [file]
-      });
-      setReceiptSendStatus(`PDF attached. Choose WhatsApp and pick ${clientName}'s chat to send it.`, "success");
+
+    if (canNativeShare && navigator.canShare({ files: [file] })) {
+      // Text is deliberately left out: several WhatsApp builds drop the
+      // attachment when a share carries both a file and a text body.
+      await navigator.share({ title: `Spaces receipt for ${clientName}`, files: [file] });
+      setReceiptSendStatus(`PDF shared. Pick ${clientName}'s chat in WhatsApp to send it.`, "success");
       showToast("PDF ready to share", `Choose WhatsApp and send it to ${clientName}.`);
       return { ok: true, shared: true };
     }
 
-    // No share sheet on this device (desktop): save the PDF and open the
-    // client's WhatsApp chat with the receipt message so only the attachment
-    // step is left.
     downloadFile(file);
-    if (!els.manualWhatsappReceipt.hidden) {
-      window.open(els.manualWhatsappReceipt.href, "_blank", "noopener,noreferrer");
-      setReceiptSendStatus(`PDF downloaded and ${clientName}'s chat opened. Attach the downloaded PDF and send.`, "success");
-      showToast("PDF downloaded", `Attach it in ${clientName}'s open WhatsApp chat.`);
+    if (chatWindow) {
+      chatWindow.location = whatsappUrl;
+      setReceiptSendStatus(`PDF saved and ${clientName}'s chat opened. Attach the saved PDF and send.`, "success");
+      showToast("PDF saved", `Attach it in ${clientName}'s open WhatsApp chat.`);
+    } else if (whatsappUrl) {
+      setReceiptSendStatus(`PDF saved. Your browser blocked the WhatsApp tab — open ${clientName}'s chat and attach it.`, "success");
+      showToast("PDF saved", "Allow popups for this site to open the chat automatically.");
     } else {
-      setReceiptSendStatus("PDF downloaded. This record has no WhatsApp number, so share the file manually.", "success");
-      showToast("PDF downloaded", "No WhatsApp number on record for this receipt.");
+      setReceiptSendStatus("PDF saved. This record has no WhatsApp number, so share the file manually.", "success");
+      showToast("PDF saved", "No WhatsApp number on record for this receipt.");
     }
     return { ok: true, downloaded: true };
   } catch (error) {
+    chatWindow?.close();
     console.warn("Receipt PDF share failed", error);
     setReceiptSendStatus(`Could not prepare the PDF: ${error.message}`, "error");
     showToast("PDF share failed", error.message, "error");
@@ -3995,14 +3722,8 @@ document.addEventListener("visibilitychange", () => {
 window.setInterval(() => maybeRefreshData(), 60000);
 els.exportCsv.addEventListener("click", exportCsv);
 els.printReceipt.addEventListener("click", () => window.print());
-els.downloadReceipt.addEventListener("click", async () => {
-  try {
-    const file = await receiptPdfFile();
-    downloadFile(file);
-    showToast("PDF saved", "Receipt PDF downloaded.");
-  } catch (error) {
-    showToast("Could not save PDF", error.message, "error");
-  }
+els.viewReceipt.addEventListener("click", () => {
+  viewCurrentReceipt().catch(() => {});
 });
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 if (els.closeStatement) els.closeStatement.addEventListener("click", () => els.statementDialog.close());
