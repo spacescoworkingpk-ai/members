@@ -31,7 +31,7 @@ test("payment and quick receipt writes require atomic RPCs", () => {
   assert.match(app, /callRpc\("record_membership_payment"/);
   assert.match(app, /callRpc\("record_quick_receipt"/);
   assert.equal((app.match(/describeWriteFailure\(error, "(payment|receipt)"\)/g) || []).length, 2);
-  assert.match(app, /safe to retry/);
+  assert.match(app, /Check the latest records before retrying/);
 });
 
 test("a database missing the migration is diagnosed, not blamed on the user", () => {

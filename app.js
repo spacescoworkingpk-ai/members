@@ -117,10 +117,26 @@ let cashLedgerReady = true;
 let ownerLedgerReady = true;
 let memberPlanItemsReady = true;
 let staffProfile = null;
+const sessionKey = "spaces-coworking-staff-session";
 let session = loadSession();
 let lastAutoRefreshAt = 0;
 let memberFormPlanLines = [];
 let healthChecked = false;
+let dataLoadPromise = null;
+let writesInFlight = 0;
+const dirtyForms = new Set();
+const formReceiptAttempts = new WeakMap();
+
+function receiptAttempt(form, payload, prefix, validity = {}) {
+  const fingerprint = JSON.stringify(payload);
+  const existing = formReceiptAttempts.get(form);
+  if (existing?.fingerprint === fingerprint) return existing;
+  const attempt = { fingerprint, number: `${prefix}-${new Date().getFullYear()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`, validity };
+  formReceiptAttempts.set(form, attempt);
+  return attempt;
+}
+const pendingActions = new Set();
+const pendingWriteRequests = new Map();
 let currentReceiptShare = {
   message: "",
   fileName: "spaces-receipt.pdf",
@@ -130,7 +146,6 @@ let currentReceiptShare = {
   pdfPromise: null
 };
 
-const sessionKey = "spaces-coworking-staff-session";
 const fmt = new Intl.NumberFormat("en-PK", {
   style: "currency",
   currency: "PKR",
@@ -276,10 +291,14 @@ function loadSession() {
 
 function saveSession(nextSession) {
   session = nextSession;
+  try {
   if (nextSession) {
     localStorage.setItem(sessionKey, JSON.stringify(nextSession));
   } else {
     localStorage.removeItem(sessionKey);
+  }
+  } catch {
+    // Private browsing may deny storage; the current session can still work.
   }
 }
 
@@ -293,8 +312,9 @@ async function refreshSession() {
     headers: { apikey: supabaseConfig.anonKey, "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: session.refresh_token })
   }).then(async (response) => {
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error_description || payload.msg || "Session expired");
+    const payload = await readResponse(response);
+    if (!response.ok) throw new Error(payload?.error_description || payload?.msg || "Session expired");
+    if (!payload?.access_token) throw new Error("Session could not be refreshed. Please sign in again.");
     saveSession(payload);
     return payload;
   }).finally(() => {
@@ -463,19 +483,31 @@ async function supabaseRequest(path, options = {}, retry = true) {
     "Content-Type": "application/json",
     ...(options.headers || {})
   };
-  const response = await fetch(`${supabaseConfig.url}${path}`, {
+  const isWrite = options.method && options.method !== "GET";
+  let response;
+  try {
+  response = await fetch(`${supabaseConfig.url}${path}`, {
     ...options,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
+  } catch {
+    const error = new Error(isWrite
+      ? "Connection lost while saving. The entry may have been saved. Refresh and check the ledger or member list before trying again."
+      : "Could not reach the server. Check your connection and refresh.");
+    error.uncertain = Boolean(isWrite);
+    throw error;
+  }
   if (response.status === 401) {
     if (retry && session?.refresh_token) {
       try {
         await refreshSession();
-        return supabaseRequest(path, options, false);
       } catch {
-        // Continue to the sign-in reset below.
+        saveSession(null);
+        showAuth("Session expired. Please sign in again.");
+        throw new Error("Session expired. Please sign in again.");
       }
+      return supabaseRequest(path, options, false);
     }
     saveSession(null);
     showAuth("Session expired. Please sign in again.");
@@ -493,16 +525,46 @@ async function supabaseRequest(path, options = {}, retry = true) {
     const details = payload?.details && !String(message).includes(payload.details) ? ` ${payload.details}` : "";
     const error = new Error(`${message}${details}`);
     error.status = response.status;
+    error.uncertain = Boolean(isWrite && (response.status >= 500 || response.status === 408));
     error.code = payload?.code || null;
     error.payload = payload;
     throw error;
   }
   if (response.status === 204) return null;
-  return response.json();
+  return readResponse(response, isWrite);
+}
+
+async function readResponse(response, isWrite = false) {
+  try {
+    const text = await response.text();
+    if (!text.trim()) return null;
+    return JSON.parse(text);
+  } catch {
+    const error = new Error(isWrite
+      ? "The server returned an unreadable confirmation. Your entry may have been saved. Refresh and check before submitting again."
+      : "The server returned an unreadable response. Please refresh in a moment.");
+    error.uncertain = isWrite;
+    throw error;
+  }
 }
 
 async function selectRows(table, query = "select=*") {
-  return supabaseRequest(`/rest/v1/${table}?${query}`, { method: "GET" });
+  const params = new URLSearchParams(query);
+  const requestedLimit = params.has("limit") ? Number(params.get("limit")) : Infinity;
+  params.delete("limit");
+  const rows = [];
+  let offset = Number(params.get("offset") || 0);
+  while (rows.length < requestedLimit) {
+    const size = Math.min(500, requestedLimit - rows.length);
+    params.set("limit", String(size));
+    params.set("offset", String(offset));
+    const page = await supabaseRequest(`/rest/v1/${table}?${params}`, { method: "GET" });
+    if (!Array.isArray(page)) throw new Error(`Could not load ${table.replaceAll("_", " ")}. Please refresh.`);
+    rows.push(...page);
+    if (page.length < size) break;
+    offset += page.length;
+  }
+  return rows;
 }
 
 async function insertRow(table, row) {
@@ -511,6 +573,11 @@ async function insertRow(table, row) {
     headers: { Prefer: "return=representation" },
     body: row
   });
+  if (!Array.isArray(rows) || !rows[0]?.id) {
+    const error = new Error("The server did not confirm the new entry. Refresh and check before submitting again.");
+    error.uncertain = true;
+    throw error;
+  }
   return rows[0];
 }
 
@@ -520,6 +587,9 @@ async function patchRow(table, id, row) {
     headers: { Prefer: "return=representation" },
     body: row
   });
+  if (!Array.isArray(rows) || !rows[0]?.id) {
+    throw new Error("No record was updated. It may have been removed or your account no longer has permission. Refresh before trying again.");
+  }
   return rows[0];
 }
 
@@ -537,6 +607,34 @@ async function callRpc(name, params) {
   });
 }
 
+function isMissingRpc(error) {
+  const text = [error?.code, error?.message, error?.payload?.message, error?.payload?.details]
+    .filter(Boolean)
+    .join(" ");
+  return /PGRST202|Could not find the function/i.test(text);
+}
+
+async function callWriteRpc(name, params) {
+  const fingerprint = JSON.stringify([session?.user?.id, name, params]);
+  const supportsRetry = ["save_member_bundle", "create_cash_ledger_entry", "save_owner_ledger_entry"].includes(name);
+  if (supportsRetry && !pendingWriteRequests.has(fingerprint)) pendingWriteRequests.set(fingerprint, crypto.randomUUID());
+  try {
+    const value = await callRpc(name, supportsRetry ? { ...params, p_request_id: pendingWriteRequests.get(fingerprint) } : params);
+    const record = Array.isArray(value) ? value[0] : value;
+    if (!(record?.member_id || record?.entry_id || record?.owner_entry_id || record?.invoice_id)) {
+      const error = new Error("The server did not confirm the saved entry. Refresh and check before submitting again.");
+      error.uncertain = true;
+      throw error;
+    }
+    pendingWriteRequests.delete(fingerprint);
+    return { value, atomic: true };
+  } catch (error) {
+    if (!error.uncertain) pendingWriteRequests.delete(fingerprint);
+    if (isMissingRpc(error)) throw new Error("The database save function needs updating. Please ask the owner to apply the reliability update, then refresh.");
+    throw error;
+  }
+}
+
 async function loadStaffProfile() {
   const userId = session?.user?.id;
   if (!userId) throw new Error("Staff login required");
@@ -548,18 +646,43 @@ async function loadStaffProfile() {
 }
 
 async function loadData() {
+  if (dataLoadPromise) return dataLoadPromise;
+  const request = loadDataNow();
+  dataLoadPromise = request;
+  try {
+    return await request;
+  } finally {
+    if (dataLoadPromise === request) dataLoadPromise = null;
+  }
+}
+
+async function refreshAfterWrite() {
+  // A refresh started before the write cannot confirm the committed state.
+  if (dataLoadPromise) await dataLoadPromise.catch(() => {});
+  try {
+    await loadData();
+    return true;
+  } catch (error) {
+    console.error("Saved successfully; refresh failed", error);
+    setSyncStatus("Saved; refresh needed", "error");
+    showToast("Saved, but the view could not refresh", "Your change is stored. Refresh to see the latest balances. Do not submit the same entry again.", "error");
+    return false;
+  }
+}
+
+async function loadDataNow() {
   setSyncStatus("Syncing", "busy");
   staffProfile = await loadStaffProfile();
   // Keep every unpaid invoice (arrears must never age out) but only the last
   // twelve months of settled history, so the app stays fast as data grows.
   const windowStart = isoDate(addMonthsClamped(new Date(), -12));
   const invoiceWindow = `or=(status.neq.paid,issue_date.gte.${windowStart})`;
-  const invoiceSelect = canSeeRevenue()
-    ? `select=*&${invoiceWindow}&order=created_at.desc`
-    : `select=id,invoice_number,member_id,invoice_type,issue_date,valid_till,status,created_at&${invoiceWindow}&order=created_at.desc`;
+  // Staff need individual invoice totals to collect negotiated payments correctly.
+  const invoiceSelect = `select=*&${invoiceWindow}&order=created_at.desc,id.asc`;
   const optionalRows = (table, query) => selectRows(table, query)
     .then((rows) => ({ rows, ready: true }))
     .catch((error) => {
+      if (!["42P01", "PGRST205"].includes(error.code) && table !== "website_events") throw error;
       console.warn(`${table} unavailable`, error);
       return { rows: [], ready: false };
     });
@@ -580,7 +703,7 @@ async function loadData() {
     selectRows("plans", "select=*&active=eq.true&order=name.asc"),
     selectRows("members", "select=*&order=created_at.desc"),
     selectRows("invoices", invoiceSelect),
-    canSeeRevenue() ? selectRows("payments", `select=*&paid_at=gte.${windowStart}&order=paid_at.desc`) : Promise.resolve([]),
+    canSeeRevenue() ? selectRows("payments", "select=*&order=paid_at.desc,id.asc") : Promise.resolve([]),
     optionalRows("cash_ledger", "select=*&order=entry_date.desc,created_at.desc"),
     optionalRows("sales_receipts", "select=*&order=receipt_date.desc,created_at.desc"),
     optionalRows("member_plan_items", "select=*&order=sort_order.asc,created_at.asc"),
@@ -611,8 +734,8 @@ async function loadData() {
   members = memberRecords.filter((member) => member.status === "active");
   renderPlans();
   setDefaultDates();
-  syncPlanFields();
-  syncQuickInvoiceFields();
+  if (!memberFormPlanLines.length) syncPlanFields();
+  if (!els.quickRate.value) syncQuickInvoiceFields();
   render();
   setSyncStatus("Live", "ok");
   if (!healthChecked) {
@@ -744,16 +867,21 @@ function showToast(title, detail = "", type = "success") {
   if (!els.toastStack) return;
   const toast = document.createElement("div");
   toast.className = `toast ${type === "error" ? "error" : ""}`;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
   toast.innerHTML = `
     <strong>${escapeHtml(title)}</strong>
     ${detail ? `<span>${escapeHtml(detail)}</span>` : ""}
   `;
   els.toastStack.appendChild(toast);
+  if (typeof els.toastStack.showPopover === "function") els.toastStack.showPopover();
   window.setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translateY(8px)";
     toast.style.transition = "opacity 160ms ease, transform 160ms ease";
-    window.setTimeout(() => toast.remove(), 180);
+    window.setTimeout(() => {
+      toast.remove();
+      if (!els.toastStack.childElementCount && typeof els.toastStack.hidePopover === "function") els.toastStack.hidePopover();
+    }, 180);
   }, type === "error" ? 5200 : 3400);
 }
 
@@ -778,8 +906,12 @@ function lockControl(control, busyText = "Saving...") {
 }
 
 async function withControlLock(control, task, options = {}) {
-  if (control?.dataset.busy === "true") return null;
+  const actionKey = options.actionKey || control?.form?.id
+    || (control?.dataset.action ? `${control.dataset.action}:${control.dataset.id || ""}` : control?.id);
+  if (control?.dataset.busy === "true" || (actionKey && pendingActions.has(actionKey))) return null;
+  if (actionKey) pendingActions.add(actionKey);
   const unlock = lockControl(control, options.busyText || "Saving...");
+  writesInFlight += 1;
   try {
     const result = await task();
     if (options.successTitle && result !== false) showToast(options.successTitle, options.successDetail || "");
@@ -789,6 +921,9 @@ async function withControlLock(control, task, options = {}) {
     if (unlock) unlock(0);
     showToast(options.errorTitle || "Action failed", error.message || "Please try again.", "error");
     throw error;
+  } finally {
+    writesInFlight = Math.max(0, writesInFlight - 1);
+    if (actionKey) pendingActions.delete(actionKey);
   }
 }
 
@@ -860,6 +995,44 @@ function positiveIntOr(value, fallback = 1) {
 
 function nonNegativeMoney(value, fallback = 0) {
   return Math.max(0, Math.round(numberOr(value, fallback)));
+}
+
+function requiredText(value, label) {
+  const text = String(value || "").trim();
+  if (!text) throw new Error(`${label} is required.`);
+  return text;
+}
+
+function requiredDate(value, label) {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(new Date(`${text}T00:00:00`).getTime()) || isoDate(new Date(`${text}T00:00:00`)) !== text) {
+    throw new Error(`${label} is required.`);
+  }
+  return text;
+}
+
+function positiveWholeMoney(value, label) {
+  const amount = Number(value);
+  if (!Number.isInteger(amount) || amount <= 0 || amount > 2147483647) {
+    throw new Error(`${label} must be a whole rupee amount between 1 and 2,147,483,647.`);
+  }
+  return amount;
+}
+
+function nonNegativeWholeMoney(value, label) {
+  const amount = Number(value);
+  if (!Number.isInteger(amount) || amount < 0 || amount > 2147483647) {
+    throw new Error(`${label} must be a whole rupee amount.`);
+  }
+  return amount;
+}
+
+function positiveWholeNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`${label} must be at least 1.`);
+  }
+  return number;
 }
 
 function daysUntil(dateString) {
@@ -961,6 +1134,11 @@ function moneyOrRestricted(amount) {
 
 function paymentSourceLabel(source) {
   return paymentSources.find((item) => item.key === source || item.label === source)?.label || source || "Not selected";
+}
+
+function businessPaymentSourceOptions(selected) {
+  return paymentSources.filter((source) => ["spaces_account", "abrar_owner", selected].includes(source.key))
+    .map((source) => `<option value="${source.key}" ${source.key === selected ? "selected" : ""}>${source.label}</option>`).join("");
 }
 
 function paymentSourceOptions(selected) {
@@ -1276,6 +1454,7 @@ function renderMembers() {
 
   const groups = [
     { key: "rooms", label: "Rooms" },
+    { key: "bundles", label: "Multiple plans" },
     { key: "flexible", label: "Flexible Desk" },
     { key: "dedicated", label: "Dedicated Desk" },
     { key: "personal", label: "Personal Desk" }
@@ -1283,10 +1462,10 @@ function renderMembers() {
 
   const rows = groups.map((group) => {
     const groupMembers = visible
-      .filter((member) => memberHasCategory(member, group.key))
+      .filter((member) => (member.planItems?.length > 1 ? "bundles" : planItemCategory(member.planItems?.[0] || { planName: member.plan }).key) === group.key)
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!groupMembers.length) return "";
-    const groupItems = groupMembers.flatMap((member) => member.planItems.filter((item) => planItemCategory(item).key === group.key));
+    const groupItems = groupMembers.flatMap((member) => member.planItems || []);
     const occupied = groupItems.reduce((sum, item) => sum + Number(item.seats || 0), 0);
     const revenue = groupItems.reduce((sum, item) => sum + Number(item.offeredRate || 0), 0);
     return `
@@ -1310,11 +1489,13 @@ function renderMembers() {
 }
 
 const CATCHUP_MIGRATION = "supabase/migrations/20260721_production_catchup.sql";
+const RELIABILITY_MIGRATION = "supabase/migrations/20260906_reliable_write_paths.sql";
 
 // Turns a Supabase/PostgREST failure into something a staff member can act on.
 // The common cause is a database that has not had the latest migration run,
 // which otherwise surfaces as an opaque PGRST202/42703 code.
 function describeWriteFailure(error, what) {
+  if (error?.uncertain) return error.message;
   const text = [error?.code, error?.message, error?.payload?.message, error?.payload?.details]
     .filter(Boolean).join(" ");
   if (/PGRST202|Could not find the function|schema cache/i.test(text)) {
@@ -1329,7 +1510,7 @@ function describeWriteFailure(error, what) {
   if (/row-level security|permission denied|42501/i.test(text)) {
     return `Your login is not allowed to save this ${what}. Ask Abrar to check staff permissions.`;
   }
-  return `The ${what} was not saved: ${error?.message || "unknown error"}. Nothing was charged, so it is safe to retry.`;
+  return `The server could not confirm the ${what}: ${error?.message || "unknown error"}. Check the latest records before retrying.`;
 }
 
 // Warn the owner once per session if the database is behind the app, instead
@@ -1393,7 +1574,7 @@ function hasUnsavedLedgerChanges() {
 }
 
 async function maybeRefreshData(reason = "auto") {
-  if (!session?.access_token || els.appShell.hidden || anyDialogOpen() || hasUnsavedLedgerChanges()) return;
+  if (!session?.access_token || els.appShell.hidden || writesInFlight > 0 || anyDialogOpen() || hasUnsavedLedgerChanges() || dirtyForms.size) return;
   const now = Date.now();
   if (reason !== "manual" && now - lastAutoRefreshAt < 60000) return;
   lastAutoRefreshAt = now;
@@ -1426,8 +1607,8 @@ function renderEditPlanLines() {
         <select data-field="bundlePlan">${planOptionHtml(line.planName)}</select>
       </label>
       <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${positiveIntOr(line.seats, 1)}"></label>
-      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
-      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="1" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="1" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
       <button class="ghost-button plan-line-remove" data-action="remove-edit-plan-line" data-index="${index}" type="button" aria-label="Remove plan line">x</button>
     </div>
   `).join("");
@@ -1491,35 +1672,50 @@ function openMemberEditor(id) {
 async function saveMemberEdit() {
   const member = memberRecords.find((item) => item.id === editingMemberId);
   if (!member) throw new Error("This member record is no longer available. Refresh and try again.");
-  const fields = els.memberEditForm.elements;
   const lines = canSeeRevenue() && editPlanLinesState.length
     ? editPlanLinesState
     : member.planItems || editPlanLinesState;
+  const preparedLines = preparedMemberPlanLines(lines);
+  const data = new FormData(els.memberEditForm);
+  const payload = memberBundlePayload(data, preparedLines, editingMemberId, data.get("status") || "active");
+
+  await callWriteRpc(
+    "save_member_bundle",
+    payload,
+    () => saveMemberEditLegacy(member, payload, preparedLines)
+  );
+  await refreshAfterWrite();
+}
+
+async function saveMemberEditLegacy(member, payload, lines) {
+  if (canSeeRevenue() && lines.length > 1 && !memberPlanItemsReady) {
+    throw new Error(`Multiple membership plans need the database update in ${RELIABILITY_MIGRATION}.`);
+  }
   const primary = lines[0];
-  const totalSeats = lines.reduce((sum, line) => sum + positiveIntOr(line.seats, 1), 0);
-  const totalStandard = lines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
-  const totalOffered = lines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
+  const totalSeats = lines.reduce((sum, line) => sum + line.seats, 0);
+  const totalStandard = lines.reduce((sum, line) => sum + line.standardRate, 0);
+  const totalOffered = lines.reduce((sum, line) => sum + line.offeredRate, 0);
   const changes = {
-    full_name: fields.name.value.trim(),
-    company: fields.company.value.trim() || null,
-    phone: fields.phone.value.trim(),
-    email: fields.email.value.trim() || null,
+    full_name: payload.p_full_name,
+    company: payload.p_company,
+    phone: payload.p_phone,
+    email: payload.p_email,
     plan_id: primary?.planId || null,
     plan_name: primary?.planName || member.primaryPlanName,
     seats: totalSeats,
-    joining_date: fields.joiningDate.value,
-    renewal_date: fields.renewalDate.value,
-    notes: fields.notes.value.trim() || null,
-    status: fields.status.value || "active"
+    joining_date: payload.p_joining_date,
+    renewal_date: payload.p_renewal_date,
+    notes: payload.p_notes,
+    status: payload.p_status
   };
   if (canSeeRevenue()) {
     changes.standard_monthly_rate = totalStandard;
     changes.offered_monthly_rate = totalOffered;
-    changes.deposit_amount = nonNegativeMoney(fields.deposit.value, 0);
-    changes.discount_reason = fields.discountReason.value.trim() || null;
+    changes.deposit_amount = payload.p_deposit_amount;
+    changes.discount_reason = payload.p_discount_reason;
   }
   await patchRow("members", editingMemberId, changes);
-  if (canSeeRevenue()) {
+  if (canSeeRevenue() && memberPlanItemsReady) {
     await replaceMemberPlanItems(editingMemberId, lines);
   }
   await recordAudit("update_member_record", "members", editingMemberId, {
@@ -1527,7 +1723,6 @@ async function saveMemberEdit() {
     status: changes.status,
     monthly_fee: canSeeRevenue() ? totalOffered : undefined
   });
-  await loadData();
 }
 
 async function deleteMember(id) {
@@ -1544,7 +1739,7 @@ async function deleteMember(id) {
     setSyncStatus("Saving", "busy");
     await patchRow("members", id, { status: "cancelled" });
     await recordAudit("archive_member", "members", id, { name: member.name, previous_status: member.status });
-    await loadData();
+    await refreshAfterWrite();
     showToast("Member archived", `${member.name} moved out of active members.`);
   } catch (error) {
     showToast("Could not archive member", error.message, "error");
@@ -1566,7 +1761,7 @@ async function restoreMember(id) {
     setSyncStatus("Saving", "busy");
     await patchRow("members", id, { status: "active" });
     await recordAudit("restore_member", "members", id, { name: member.name });
-    await loadData();
+    await refreshAfterWrite();
     showToast("Member restored", `${member.name} is active again.`);
   } catch (error) {
     showToast("Could not restore member", error.message, "error");
@@ -1578,14 +1773,16 @@ async function restoreMember(id) {
 async function createCashEntryFromForm(form, entryType) {
   const data = new FormData(form);
   const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
-  const amount = nonNegativeMoney(data.get("amount"), 0);
+  const amount = positiveWholeMoney(data.get("amount"), "Amount");
   const isInternal = isInternalTransfer({
     entry_type: entryType,
     category: entryType === "expense" ? categoryOrSource : null,
     source: entryType === "receiving" ? categoryOrSource : null
   });
-  const row = await insertCashLedgerEntry({
-    entry_date: data.get("entryDate"),
+  if (isInternal) throw new Error("Record transfers in the Business Ledger so both balances stay linked.");
+  requiredText(categoryOrSource, entryType === "expense" ? "Category" : "Receiving source");
+  const values = {
+    entry_date: requiredDate(data.get("entryDate"), "Entry date"),
     entry_type: entryType,
     category: entryType === "expense" ? categoryOrSource : null,
     source: entryType === "receiving" ? categoryOrSource : null,
@@ -1594,8 +1791,16 @@ async function createCashEntryFromForm(form, entryType) {
     notes: data.get("notes") || null,
     payment_method: entryType === "expense" ? data.get("paymentMethod") || "petty_cash" : null,
     payment_source: data.get("paymentSource") || (entryType === "receiving" ? "staff" : null),
-    is_internal_transfer: isInternal
-  });
+    is_internal_transfer: false
+  };
+  const saved = await callWriteRpc("create_cash_ledger_entry", {
+    p_entry_date: values.entry_date, p_entry_type: entryType,
+    p_category: values.category, p_source: values.source,
+    p_person_name: values.person_name, p_amount: amount, p_notes: values.notes,
+    p_payment_method: values.payment_method, p_payment_source: values.payment_source
+  }, () => insertCashLedgerEntry(values));
+  if (saved.atomic) return saved.value;
+  const row = saved.value;
   await recordAudit(`create_staff_${entryType}`, "cash_ledger", row.id, {
     category_or_source: categoryOrSource,
     amount,
@@ -1631,16 +1836,17 @@ async function saveCashRow(id) {
   const row = els.cashSheet.querySelector(`tr[data-cash-id="${CSS.escape(id)}"]`);
   if (!row) return;
   const existing = cashEntries.find((entry) => entry.id === id);
+  if (!existing || !canEditCashEntry(existing)) throw new Error("This entry is locked or could not be found. Refresh to see its latest status.");
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
   const entryType = value("entryType");
   const categorySource = value("categorySource");
   const changes = {
-    entry_date: value("entryDate"),
+    entry_date: requiredDate(value("entryDate"), "Entry date"),
     entry_type: entryType,
     category: entryType === "expense" ? categorySource : null,
     source: entryType === "receiving" ? categorySource : null,
     person_name: value("personName") || null,
-    amount: nonNegativeMoney(value("amount"), 0),
+    amount: positiveWholeMoney(value("amount"), "Amount"),
     notes: value("notes") || null,
     payment_method: entryType === "expense" ? value("paymentMethod") || "petty_cash" : null
   };
@@ -1651,11 +1857,20 @@ async function saveCashRow(id) {
   if (existing?.linked_owner_ledger_id && !isInternalTransfer(nextRow)) {
     throw new Error("Linked transfer rows cannot be changed into normal cash rows. Add a correcting entry instead.");
   }
+  requiredText(categorySource, "Category or source");
+  await callWriteRpc("update_cash_ledger_entry", {
+    p_entry_id: id, p_entry_date: changes.entry_date, p_entry_type: entryType,
+    p_category: changes.category, p_source: changes.source,
+    p_person_name: changes.person_name, p_amount: changes.amount,
+    p_notes: changes.notes, p_payment_method: changes.payment_method
+  }, async () => {
+  if (existing?.linked_owner_ledger_id) throw new Error("Linked transfers need the database reliability update before they can be edited.");
   await patchRow("cash_ledger", id, changes);
   if (existing?.linked_owner_ledger_id && isInternalTransfer(nextRow)) {
     await syncOwnerFromCashRow(existing.linked_owner_ledger_id, nextRow);
   }
   await recordAudit("update_staff_cash_row", "cash_ledger", id, { before: existing, after: changes });
+  });
 }
 
 function renderReceipts() {
@@ -1931,7 +2146,7 @@ function cashMonthlySummary(selectedMonth = els.cashMonth?.value || monthKey()) 
 function canEditCashEntry(entry) {
   if (isSystemLedgerEntry(entry)) return false;
   if (canSeeRevenue()) return true;
-  if (entry.created_by && entry.created_by !== session?.user?.id) return false;
+  if (entry.linked_owner_ledger_id || entry.created_by !== session?.user?.id) return false;
   const createdAt = new Date(entry.created_at || entry.entry_date);
   return Date.now() - createdAt.getTime() <= 3 * 86400000;
 }
@@ -1970,6 +2185,11 @@ function renderCashAccounting() {
   if (els.cashCardExpensesMonth) els.cashCardExpensesMonth.textContent = fmt.format(summary.cardExpenses);
   els.cashBalance.textContent = fmt.format(summary.closing);
 
+  if (els.cashSheet.querySelector("tr.dirty")) {
+    els.cashMessage.textContent = "Unsaved rows kept. Save each edited row before changing the sheet view.";
+    return;
+  }
+
   const filtered = summary.entries.filter((entry) => {
     const haystack = [
       entry.entry_type,
@@ -1998,7 +2218,7 @@ function renderCashAccounting() {
         <td><select data-field="categorySource" ${editable ? "" : "disabled"}>${cashEntryOptions(entry.entry_type, categoryValue)}</select></td>
         <td><select data-field="paymentMethod" ${editable && entry.entry_type === "expense" ? "" : "disabled"}>${expensePaymentMethodOptions(entry.payment_method || "petty_cash")}</select></td>
         <td><input data-field="personName" value="${escapeAttr(entry.person_name)}" ${editable ? "" : "disabled"}></td>
-        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
+        <td><input data-field="amount" type="number" min="1" step="1" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
         <td><textarea data-field="notes" rows="1" ${editable ? "" : "disabled"}>${escapeHtml(entry.notes)}</textarea></td>
         <td>${editable ? `<button class="tiny-button" data-action="save-cash-row" data-id="${entry.id}" type="button">Save</button>` : `<span class="locked-note">Locked</span>`}</td>
       </tr>
@@ -2047,6 +2267,10 @@ function renderOwnerLedger() {
   }
 
   const query = els.ownerSearch.value.trim().toLowerCase();
+  if (els.ownerSheet.querySelector("tr.dirty")) {
+    els.ownerMessage.textContent = "Unsaved rows kept. Save each edited row before changing the sheet view.";
+    return;
+  }
   const filtered = ownerEntries
     .filter((entry) => isCashEntryInMonth(entry, range))
     .filter((entry) => {
@@ -2074,8 +2298,8 @@ function renderOwnerLedger() {
           </select>
         </td>
         <td><select data-field="categorySource" ${editable ? "" : "disabled"}>${ownerEntryOptions(entry.entry_type, categoryValue)}</select></td>
-        <td><select data-field="paymentSource" ${editable ? "" : "disabled"}>${paymentSourceOptions(entry.payment_source || "abrar_owner")}</select></td>
-        <td><input data-field="amount" type="number" min="0" step="100" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
+        <td><select data-field="paymentSource" ${editable ? "" : "disabled"}>${businessPaymentSourceOptions(entry.payment_source || "abrar_owner")}</select></td>
+        <td><input data-field="amount" type="number" min="1" step="1" value="${Number(entry.amount || 0)}" ${editable ? "" : "disabled"}></td>
         <td><textarea data-field="notes" rows="1" ${editable ? "" : "disabled"}>${escapeHtml(entry.notes)}</textarea></td>
         <td><input data-field="attachment" value="${escapeAttr(entry.attachment_note)}" ${editable ? "" : "disabled"}></td>
         <td>${editable ? `<button class="tiny-button" data-action="save-owner-row" data-id="${entry.id}" type="button">Save</button>` : `<span class="locked-note">System entry</span>`}</td>
@@ -2098,7 +2322,9 @@ function renderAuditLog() {
   const rows = auditLogs.slice(0, 30);
   els.auditLogSheet.innerHTML = rows.length ? rows.map((entry) => {
     const details = entry.details || {};
-    const { before, after, ...summary } = details;
+    const { before: legacyBefore, after: legacyAfter, ...summary } = details;
+    const before = entry.before_data ?? legacyBefore;
+    const after = entry.after_data ?? legacyAfter;
     return `
       <tr>
         <td data-label="Time">${formatDateTime(new Date(entry.created_at))}</td>
@@ -2154,6 +2380,30 @@ async function recordAudit(action, tableName, recordId, details = {}) {
 }
 
 async function createOwnerEntryFromForm(form, entryType) {
+  const data = new FormData(form);
+  if (!canSeeRevenue()) throw new Error("Owner access required.");
+  const category = requiredText(data.get(entryType === "expense" ? "category" : "source"), "Category or source");
+  const source = requiredText(data.get("paymentSource"), "Payment source");
+  if (!paymentSources.some((item) => item.key === source)) throw new Error("Select a valid payment source.");
+  return callWriteRpc("save_owner_ledger_entry", {
+    p_owner_entry_id: null,
+    p_entry_date: requiredDate(data.get("entryDate"), "Entry date"),
+    p_entry_type: entryType,
+    p_category: entryType === "expense" ? category : null,
+    p_source: entryType === "receiving" ? category : null,
+    p_payment_source: source,
+    p_amount: positiveWholeMoney(data.get("amount"), "Amount"),
+    p_notes: data.get("notes") || null,
+    p_attachment_note: data.get("attachment") || null
+  }, () => {
+    if (["Transfer to Staff", "Petty Cash Top-Up", "Received From Staff"].includes(category)) {
+      throw new Error("Transfers need the database reliability update so both balances can be saved together.");
+    }
+    return createOwnerEntryLegacy(form, entryType);
+  });
+}
+
+async function createOwnerEntryLegacy(form, entryType) {
   const data = new FormData(form);
   const categoryOrSource = entryType === "expense" ? data.get("category") : data.get("source");
   const transferId = crypto.randomUUID();
@@ -2226,17 +2476,18 @@ async function saveOwnerRow(id) {
   const row = els.ownerSheet.querySelector(`tr[data-owner-id="${CSS.escape(id)}"]`);
   if (!row) return;
   const existing = ownerEntries.find((entry) => entry.id === id);
+  if (!canSeeRevenue() || !existing) throw new Error("Owner access required or entry no longer exists.");
   if (isSystemLedgerEntry(existing)) throw new Error("Receipt ledger rows are locked. Correct the payment or receipt instead.");
   const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value.trim();
   const entryType = value("entryType");
   const categorySource = value("categorySource");
   const changes = {
-    entry_date: value("entryDate"),
+    entry_date: requiredDate(value("entryDate"), "Entry date"),
     entry_type: entryType,
     category: entryType === "expense" ? categorySource : null,
     source: entryType === "receiving" ? categorySource : null,
     payment_source: value("paymentSource"),
-    amount: nonNegativeMoney(value("amount"), 0),
+    amount: positiveWholeMoney(value("amount"), "Amount"),
     notes: value("notes") || null,
     attachment_note: value("attachment") || null,
     is_internal_transfer: isInternalTransfer({ entry_type: entryType, category: entryType === "expense" ? categorySource : null, source: entryType === "receiving" ? categorySource : null })
@@ -2245,6 +2496,14 @@ async function saveOwnerRow(id) {
   if (existing?.linked_cash_ledger_id && !isInternalTransfer(nextRow)) {
     throw new Error("Linked transfer rows cannot be changed into normal owner rows. Add a correcting entry instead.");
   }
+  requiredText(categorySource, "Category or source");
+  await callWriteRpc("save_owner_ledger_entry", {
+    p_owner_entry_id: id, p_entry_date: changes.entry_date, p_entry_type: entryType,
+    p_category: changes.category, p_source: changes.source,
+    p_payment_source: changes.payment_source, p_amount: changes.amount,
+    p_notes: changes.notes, p_attachment_note: changes.attachment_note
+  }, async () => {
+  if (existing?.linked_cash_ledger_id || isInternalTransfer(nextRow)) throw new Error("Linked transfers need the database reliability update before they can be edited.");
   await patchRow("owner_ledger", id, changes);
   if (existing?.linked_cash_ledger_id && isInternalTransfer(nextRow)) {
     await syncCashFromOwnerRow(existing.linked_cash_ledger_id, nextRow);
@@ -2252,6 +2511,7 @@ async function saveOwnerRow(id) {
     await createLinkedCashForOwnerRow(id, nextRow);
   }
   await recordAudit("update_owner_ledger_row", "owner_ledger", id, { before: existing, after: changes });
+  });
 }
 
 async function createLinkedCashForOwnerRow(ownerId, ownerRow) {
@@ -2349,6 +2609,10 @@ async function syncOwnerFromCashRow(ownerId, cashRow) {
 }
 
 function renderPlans() {
+  const selects = [els.planSelect, els.expenseCategory, els.expensePaymentMethod, els.ownerExpenseCategory,
+    els.ownerExpenseSource, els.ownerReceivingPaymentSource, els.ownerReceivingSource,
+    els.receivingSource, els.receivingPaymentSource].filter(Boolean);
+  const selections = selects.map((select) => [select, select.value]);
   els.planList.innerHTML = plans.length ? plans.map((plan) => `
     <article class="plan-card">
       <header>
@@ -2376,16 +2640,20 @@ function renderPlans() {
     els.ownerExpenseCategory.innerHTML = ownerExpenseCategories.map((category) => `
       <option value="${escapeAttr(category)}">${escapeHtml(category)}</option>
     `).join("");
-    els.ownerExpenseSource.innerHTML = paymentSourceOptions("abrar_owner");
-    els.ownerReceivingPaymentSource.innerHTML = paymentSourceOptions("abrar_owner");
+    els.ownerExpenseSource.innerHTML = businessPaymentSourceOptions("abrar_owner");
+    els.ownerReceivingPaymentSource.innerHTML = businessPaymentSourceOptions("abrar_owner");
     els.ownerReceivingSource.innerHTML = ownerEntryOptions("receiving", "Received From Staff");
   }
 
-  const receivingSources = ["Owner transfer - Abrar", "Miscellaneous balance adjustment"];
+  const receivingSources = ["Miscellaneous balance adjustment"];
   els.receivingSource.innerHTML = receivingSources.map((source) => `
     <option value="${escapeAttr(source)}">${escapeHtml(source)}</option>
   `).join("");
-  els.receivingPaymentSource.innerHTML = paymentSourceOptions("staff");
+  els.receivingPaymentSource.innerHTML = paymentSources.filter((source) => ["staff","raza_manager"].includes(source.key))
+    .map((source) => `<option value="${source.key}" ${source.key === "staff" ? "selected" : ""}>${source.label}</option>`).join("");
+  for (const [select, value] of selections) {
+    if ([...select.options].some((option) => option.value === value)) select.value = value;
+  }
 }
 
 function planOptionHtml(selectedPlanName) {
@@ -2427,8 +2695,8 @@ function renderMemberPlanLines() {
         <select data-field="bundlePlan">${planOptionHtml(line.planName)}</select>
       </label>
       <label>Seats<input data-field="bundleSeats" type="number" min="1" value="${positiveIntOr(line.seats, 1)}"></label>
-      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="500" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
-      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="500" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Standard<input data-field="bundleStandard" type="number" min="0" step="1" value="${nonNegativeMoney(line.standardRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
+      <label ${canSeeRevenue() ? "" : "hidden"}>Offered<input data-field="bundleOffered" type="number" min="0" step="1" value="${nonNegativeMoney(line.offeredRate, 0)}" ${canSeeRevenue() ? "" : "disabled"}></label>
       <button class="ghost-button plan-line-remove" data-action="remove-plan-line" data-index="${index}" type="button" aria-label="Remove plan line">x</button>
     </div>
   `).join("");
@@ -2516,13 +2784,25 @@ function invoiceLines(member, override = {}) {
       amount
     }];
   }
-  return (member.planItems || []).map((item) => ({
+  const sourceItems = member.planItems?.length ? member.planItems : [{ planName: member.plan, seats: member.seats, offeredRate: member.monthlyFee }];
+  const targetAmount = invoicePricing(member, override).amount;
+  const originalTotal = sourceItems.reduce((sum, item) => sum + nonNegativeMoney(item.offeredRate, 0), 0);
+  let allocated = 0;
+  let cumulative = 0;
+  return sourceItems.map((item, index) => {
+    cumulative += nonNegativeMoney(item.offeredRate, 0);
+    const cumulativeAmount = index === sourceItems.length - 1 ? targetAmount
+      : originalTotal ? Math.floor(targetAmount * cumulative / originalTotal) : 0;
+    const lineAmount = cumulativeAmount - allocated;
+    allocated = cumulativeAmount;
+    return {
     description: item.planName,
     quantity: positiveIntOr(item.seats, 1),
-    unitPrice: Math.round(nonNegativeMoney(item.offeredRate, 0) / positiveIntOr(item.seats, 1)),
-    amount: nonNegativeMoney(item.offeredRate, 0),
+    unitPrice: Math.round(lineAmount / positiveIntOr(item.seats, 1)),
+    amount: lineAmount,
     standardAmount: nonNegativeMoney(item.standardRate, 0)
-  }));
+  };
+  });
 }
 
 function receiptDateFor(member, override = {}) {
@@ -2549,11 +2829,11 @@ function rateLabel(member) {
 
 async function markPaid(id, control = null) {
   const member = members.find((item) => item.id === id);
-  if (!member) return;
-  const paymentSource = await promptPaymentSource(`How was ${member.name}'s payment collected?`);
-  if (!paymentSource) return;
+  if (!member || member.paid) return;
   const settlementAmount = nonNegativeMoney(member.editedInvoice?.total_amount ?? member.monthlyFee, 0);
   return withControlLock(control, async () => {
+    const paymentSource = await promptPaymentSource(`How was ${member.name}'s payment collected?`);
+    if (!paymentSource) return false;
     setSyncStatus("Saving", "busy");
     let receiptRows;
     try {
@@ -2569,16 +2849,15 @@ async function markPaid(id, control = null) {
       throw new Error(describeWriteFailure(error, "payment"));
     }
     const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows;
+    if (!receiptRow?.invoice_number) throw new Error("The payment confirmation was incomplete. Refresh and check the member's history before trying again.");
     const invoiceNumber = receiptRow?.invoice_number || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
     // Open the receipt right away; the receipt content is built from data we
     // already have, so the full table refresh can happen in the background.
-    openInvoice({ ...member, paid: true }, { mode: "receipt", invoiceId: invoiceNumber });
+    openInvoice({ ...member, paid: true }, { mode: "receipt", invoiceId: invoiceNumber, amount: settlementAmount });
     setReceiptSendStatus("Payment saved. Tap Share PDF to send the receipt through WhatsApp.", "success");
-    loadData().catch((error) => {
-      console.error(error);
-      setSyncStatus("Refresh failed", "error");
-    });
+    await refreshAfterWrite();
   }, {
+    actionKey: `paid:${id}`,
     busyText: "Saving...",
     successTitle: "Receipt marked paid",
     successDetail: `${member.name} receipt was saved.`,
@@ -2590,6 +2869,23 @@ async function markPaid(id, control = null) {
 }
 
 async function createInvoice(member, override = {}) {
+  const { amount, standardPrice, unitPrice } = invoicePricing(member, override);
+  const lines = invoiceLines(member, override);
+  const invoiceNumber = override.invoiceId || `INV-${new Date().getFullYear()}-${crypto.randomUUID()}`;
+  const saved = await callWriteRpc("save_edited_invoice", {
+    p_member_id: member.id, p_invoice_number: invoiceNumber,
+    p_issue_date: requiredDate(override.receiptDate || member.membershipFrom, "Membership start"),
+    p_valid_till: requiredDate(override.validTill || member.validTill, "Membership end"),
+    p_amount: positiveWholeMoney(amount, "Invoice amount"), p_standard_amount: standardPrice,
+    p_note: override.note || null,
+    p_items: lines.map((line) => ({description: line.description, quantity: line.quantity,
+      unit_price: nonNegativeMoney(line.unitPrice ?? unitPrice,0), amount: nonNegativeMoney(line.amount,0)}))
+  });
+  const value = Array.isArray(saved.value) ? saved.value[0] : saved.value;
+  return { id: value.invoice_id, invoice_number: value.invoice_number };
+}
+
+async function createInvoiceLegacy(member, override = {}) {
   const { amount, tax, total, standardPrice, unitPrice, discount } = invoicePricing(member, override);
   const lines = invoiceLines(member, override);
   const invoiceNumber = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
@@ -2943,7 +3239,12 @@ async function shareReceiptToWhatsapp(event) {
 }
 
 function openReceipt(member) {
-  openInvoice(member, { mode: "receipt" });
+  const stored = invoices.find((invoice) => invoice.member_id === member.id && invoice.valid_till === member.validTill && invoice.status === "paid");
+  openInvoice(member, {
+    mode: "receipt",
+    ...(stored ? { invoiceId: stored.invoice_number, validTill: stored.valid_till } : {}),
+    amount: member.paid ? (stored?.subtotal_amount ?? member.paidAmount ?? member.monthlyFee) : member.editedInvoice?.total_amount ?? member.monthlyFee
+  });
 }
 
 function openStatement(member) {
@@ -3223,12 +3524,11 @@ function exportAuditReport() {
 function setDefaultDates() {
   const today = new Date();
   const renewal = addMonthsClamped(today, 1);
-  els.memberForm.elements.joiningDate.value = isoDate(today);
-  els.memberForm.elements.renewalDate.value = isoDate(renewal);
-  els.expenseForm.elements.entryDate.value = isoToday();
-  els.receivingForm.elements.entryDate.value = isoToday();
-  if (els.ownerExpenseForm) els.ownerExpenseForm.elements.entryDate.value = isoToday();
-  if (els.ownerReceivingForm) els.ownerReceivingForm.elements.entryDate.value = isoToday();
+  if (!els.memberForm.elements.joiningDate.value) els.memberForm.elements.joiningDate.value = isoDate(today);
+  if (!els.memberForm.elements.renewalDate.value) els.memberForm.elements.renewalDate.value = isoDate(renewal);
+  for (const form of [els.expenseForm, els.receivingForm, els.ownerExpenseForm, els.ownerReceivingForm]) {
+    if (form && !form.elements.entryDate.value) form.elements.entryDate.value = isoToday();
+  }
   if (els.cashMonth && !els.cashMonth.value) els.cashMonth.value = monthKey(today);
   if (els.ownerMonth && !els.ownerMonth.value) els.ownerMonth.value = monthKey(today);
 }
@@ -3326,20 +3626,23 @@ function quickValidity(service, quantity) {
 async function generateQuickInvoice() {
   const data = new FormData(els.quickInvoiceForm);
   const service = quickServices[data.get("service")];
-  const quantity = positiveIntOr(data.get("quantity"), 1);
+  if (!service) throw new Error("Select a service.");
+  const quantity = positiveWholeNumber(data.get("quantity"), "Quantity");
   // Rate and total are staff-editable; the typed total is what gets charged.
   const rate = nonNegativeMoney(data.get("rate"), service.rate);
-  const amount = nonNegativeMoney(data.get("total"), rate * quantity);
+  const amount = positiveWholeMoney(data.get("total"), "Receipt amount");
   const note = data.get("notes") || "";
-  const validity = quickValidity(service, quantity);
   const paymentMode = data.get("paymentMode");
-  const receiptNumber = `SP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0")}`;
   const customer = {
-    name: data.get("name"),
-    phone: data.get("phone")
+    name: requiredText(data.get("name"), "Customer name"),
+    phone: requiredText(data.get("phone"), "Phone")
   };
+  const attempt = receiptAttempt(els.quickInvoiceForm,
+    { customer, service: service.label, quantity, rate, amount, paymentMode, note }, "SP", quickValidity(service, quantity));
+  const receiptNumber = attempt.number;
+  const validity = attempt.validity;
   try {
-    await callRpc("record_quick_receipt", {
+    const result = await callRpc("record_quick_receipt", {
       p_receipt_number: receiptNumber,
       p_customer_name: customer.name,
       p_phone: customer.phone,
@@ -3352,6 +3655,8 @@ async function generateQuickInvoice() {
       p_valid_till: validity.validTill,
       p_notes: note || null
     });
+    const receipt = Array.isArray(result) ? result[0] : result;
+    if (!receipt?.invoice_id) throw new Error("Receipt confirmation was incomplete. Check the latest records before retrying.");
   } catch (error) {
     throw new Error(describeWriteFailure(error, "receipt"));
   }
@@ -3380,43 +3685,104 @@ async function generateQuickInvoice() {
   });
 }
 
-async function createMemberFromForm() {
-  const data = new FormData(els.memberForm);
-  const incomingPhone = normalizedPhone(data.get("phone"));
+function preparedMemberPlanLines(rawLines) {
+  if (!plans.length) throw new Error("Membership plans could not load. Refresh and try again.");
+  if (!Array.isArray(rawLines) || !rawLines.length) throw new Error("Add at least one membership plan.");
+  return rawLines.map((line, index) => {
+    const plan = plans.find((item) => item.id === line.planId || item.name === line.planName);
+    if (!plan) throw new Error(`Plan ${index + 1} is no longer available. Refresh and choose it again.`);
+    const standardRate = canSeeRevenue()
+      ? nonNegativeWholeMoney(line.standardRate, `Standard rate for plan ${index + 1}`)
+      : nonNegativeWholeMoney(plan.price, `Standard rate for plan ${index + 1}`);
+    const offeredRate = canSeeRevenue()
+      ? nonNegativeWholeMoney(line.offeredRate, `Offered rate for plan ${index + 1}`)
+      : standardRate;
+    return {
+      planId: plan.id,
+      planName: plan.name,
+      category: plan.category || inferPlanCategory(plan.name),
+      seats: positiveWholeNumber(line.seats, `Seats for plan ${index + 1}`),
+      standardRate,
+      offeredRate,
+      sortOrder: index
+    };
+  });
+}
+
+function memberBundlePayload(data, lines, memberId = null, status = "active") {
+  const name = requiredText(data.get("name"), "Member name");
+  const phone = requiredText(data.get("phone"), "Phone number");
+  const normalized = normalizedPhone(phone);
+  if (normalized.length < 10) throw new Error("Enter a valid phone number.");
+  const joiningDate = requiredDate(data.get("joiningDate"), "Joining date");
+  const renewalDate = requiredDate(data.get("renewalDate"), "Renewal date");
+  if (renewalDate <= joiningDate) throw new Error("Renewal date must be after joining date.");
+  if (!['active', 'paused', 'cancelled'].includes(status)) throw new Error("Choose a valid member status.");
+
   const duplicate = memberRecords.find((member) =>
-    member.status !== "cancelled"
-    && incomingPhone
-    && normalizedPhone(member.phone) === incomingPhone
+    member.id !== memberId
+    && member.status !== "cancelled"
+    && normalizedPhone(member.phone) === normalized
   );
   if (duplicate) {
-    throw new Error(`${duplicate.name} already uses this phone number. Update the existing record instead of adding a duplicate.`);
+    throw new Error(`${duplicate.name} already uses this phone number. Update that member instead of adding a duplicate.`);
   }
-  const rawLines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
-  const lines = canSeeRevenue()
-    ? rawLines
-    : rawLines.map((line) => ({ ...line, offeredRate: nonNegativeMoney(line.standardRate, 0) }));
+
+  return {
+    p_member_id: memberId,
+    p_full_name: name,
+    p_company: String(data.get("company") || "").trim() || null,
+    p_phone: phone,
+    p_email: String(data.get("email") || "").trim() || null,
+    p_joining_date: joiningDate,
+    p_renewal_date: renewalDate,
+    p_status: status,
+    p_deposit_amount: canSeeRevenue()
+      ? nonNegativeWholeMoney(data.get("deposit") || 0, "Deposit")
+      : 0,
+    p_discount_reason: canSeeRevenue()
+      ? String(data.get("discountReason") || "").trim() || null
+      : null,
+    p_notes: String(data.get("notes") || "").trim() || null,
+    p_plan_items: lines.map((line) => ({
+      plan_id: line.planId,
+      plan_name: line.planName,
+      category: line.category,
+      seats: line.seats,
+      standard_monthly_rate: line.standardRate,
+      offered_monthly_rate: line.offeredRate,
+      sort_order: line.sortOrder
+    }))
+  };
+}
+
+async function createMemberLegacy(payload, lines) {
+  if (lines.length > 1 && !memberPlanItemsReady) {
+    throw new Error(`Multiple membership plans need the database update in ${RELIABILITY_MIGRATION}.`);
+  }
   const primary = lines[0];
-  const totalSeats = lines.reduce((sum, line) => sum + positiveIntOr(line.seats, 1), 0);
-  const totalStandard = lines.reduce((sum, line) => sum + nonNegativeMoney(line.standardRate, 0), 0);
-  const totalOffered = lines.reduce((sum, line) => sum + nonNegativeMoney(line.offeredRate, 0), 0);
+  const totalSeats = lines.reduce((sum, line) => sum + line.seats, 0);
+  const totalStandard = lines.reduce((sum, line) => sum + line.standardRate, 0);
+  const totalOffered = lines.reduce((sum, line) => sum + line.offeredRate, 0);
   const row = await insertRow("members", {
-    full_name: data.get("name"),
-    company: data.get("company") || null,
-    phone: data.get("phone"),
-    email: data.get("email") || null,
+    full_name: payload.p_full_name,
+    company: payload.p_company,
+    phone: payload.p_phone,
+    email: payload.p_email,
     plan_id: primary.planId || null,
     plan_name: primary.planName,
     seats: totalSeats,
-    joining_date: data.get("joiningDate"),
-    renewal_date: data.get("renewalDate"),
+    joining_date: payload.p_joining_date,
+    renewal_date: payload.p_renewal_date,
     standard_monthly_rate: totalStandard,
     offered_monthly_rate: totalOffered,
-    deposit_amount: canSeeRevenue() ? nonNegativeMoney(data.get("deposit"), 0) : 0,
-    discount_reason: canSeeRevenue() ? data.get("discountReason") || null : null,
-    notes: data.get("notes") || null
+    deposit_amount: payload.p_deposit_amount,
+    discount_reason: payload.p_discount_reason,
+    notes: payload.p_notes,
+    status: payload.p_status
   });
   try {
-    await replaceMemberPlanItems(row.id, lines);
+    if (memberPlanItemsReady) await replaceMemberPlanItems(row.id, lines);
   } catch (error) {
     await deleteRows("members", `id=eq.${encodeURIComponent(row.id)}`).catch((cleanupError) => {
       console.warn("Could not clean up partial member", cleanupError);
@@ -3424,8 +3790,8 @@ async function createMemberFromForm() {
     throw error;
   }
   await recordAudit("create_member", "members", row.id, {
-    name: data.get("name"),
-    phone: data.get("phone"),
+    name: payload.p_full_name,
+    phone: payload.p_phone,
     plan_lines: lines.map((line) => ({
       plan: line.planName,
       seats: line.seats,
@@ -3435,6 +3801,45 @@ async function createMemberFromForm() {
   });
   return row;
 }
+
+async function createMemberFromForm() {
+  const data = new FormData(els.memberForm);
+  const rawLines = memberFormPlanLines.length ? memberFormPlanLines : [selectedPlanLineFromMainForm()];
+  const lines = preparedMemberPlanLines(rawLines);
+  const payload = memberBundlePayload(data, lines);
+  const saved = await callWriteRpc(
+    "save_member_bundle",
+    payload,
+    () => createMemberLegacy(payload, lines)
+  );
+  const value = Array.isArray(saved.value) ? saved.value[0] : saved.value;
+  return saved.atomic
+    ? { id: value?.member_id, full_name: value?.full_name || payload.p_full_name }
+    : value;
+}
+
+for (const form of [els.memberForm, els.memberEditForm, els.quickInvoiceForm, els.expenseForm,
+  els.receivingForm, els.ownerExpenseForm, els.ownerReceivingForm, els.editInvoiceForm].filter(Boolean)) {
+  form.addEventListener("input", () => dirtyForms.add(form));
+  form.addEventListener("change", () => dirtyForms.add(form));
+  form.addEventListener("reset", () => {
+    dirtyForms.delete(form);
+    formReceiptAttempts.delete(form);
+  });
+  form.addEventListener("submit", (event) => {
+    if (event.submitter?.value !== "cancel" && !form.checkValidity()) event.preventDefault();
+  });
+}
+for (const [dialog, form] of [[els.addMemberDialog, els.memberForm],
+  [els.memberEditDialog, els.memberEditForm], [els.editInvoiceDialog, els.editInvoiceForm]]) {
+  dialog?.addEventListener("close", () => dirtyForms.delete(form));
+}
+window.addEventListener("beforeunload", (event) => {
+  if (dirtyForms.size || hasUnsavedLedgerChanges() || writesInFlight) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
@@ -3470,7 +3875,8 @@ document.addEventListener("click", (event) => {
   if (button.dataset.action === "save-cash-row") {
     withControlLock(button, async () => {
       await saveCashRow(button.dataset.id);
-      await loadData();
+      button.closest("tr")?.classList.remove("dirty");
+      await refreshAfterWrite();
     }, {
       busyText: "Saving...",
       successTitle: "Cash row saved",
@@ -3485,7 +3891,8 @@ document.addEventListener("click", (event) => {
   if (button.dataset.action === "save-owner-row") {
     withControlLock(button, async () => {
       await saveOwnerRow(button.dataset.id);
-      await loadData();
+      button.closest("tr")?.classList.remove("dirty");
+      await refreshAfterWrite();
     }, {
       busyText: "Saving...",
       successTitle: "Business row saved",
@@ -3508,7 +3915,7 @@ document.addEventListener("click", (event) => {
       busyText: "Deleting...",
       errorTitle: "Could not delete client",
       cooldownMs: 1600
-    });
+    }).catch(() => {});
     return;
   }
   const member = memberRecords.find((item) => item.id === button.dataset.id);
@@ -3548,7 +3955,7 @@ els.authForm.addEventListener("submit", async (event) => {
     await loadData();
   } catch (error) {
     els.authPassword.value = "";
-    els.authMessage.textContent = error.message;
+    showAuth(error.message);
   } finally {
     submit.disabled = false;
     refreshLockoutNotice();
@@ -3565,6 +3972,7 @@ els.logoutButton.addEventListener("click", () => {
 els.planSelect.addEventListener("change", syncPlanFields);
 els.addPlanLine.addEventListener("click", () => {
   const selected = els.planSelect.options[els.planSelect.selectedIndex];
+  if (!selected) return showToast("Plans unavailable", "Refresh to load the membership plans.", "error");
   memberFormPlanLines.push({
     planId: selected?.dataset.id || null,
     planName: selected?.value || plans[0]?.name || "",
@@ -3615,6 +4023,7 @@ if (els.memberFilters) {
 }
 function openAddMemberDialog() {
   if (!els.addMemberDialog) return;
+  if (!plans.length) return showToast("Plans unavailable", "Refresh to load membership plans before adding a member.", "error");
   if (window.location.hash.replace("#", "") !== "members") {
     window.location.hash = "members";
   }
@@ -3744,7 +4153,7 @@ els.memberForm.addEventListener("submit", async (event) => {
     const row = await createMemberFromForm();
     const newName = row?.full_name || els.memberForm.elements.name.value;
     els.memberForm.reset();
-    await loadData();
+    await refreshAfterWrite();
     setDefaultDates();
     syncPlanFields();
     els.addMemberDialog.close();
@@ -3778,7 +4187,7 @@ els.quickInvoiceForm.addEventListener("submit", async (event) => {
     await generateQuickInvoice();
     els.quickInvoiceForm.reset();
     syncQuickInvoiceFields();
-    await loadData();
+    await refreshAfterWrite();
   }, {
     busyText: "Generating...",
     successTitle: "Receipt generated",
@@ -3798,7 +4207,7 @@ els.expenseForm.addEventListener("submit", async (event) => {
     await createCashEntryFromForm(els.expenseForm, "expense");
     els.expenseForm.reset();
     setDefaultDates();
-    await loadData();
+    await refreshAfterWrite();
   }, {
     busyText: "Saving...",
     successTitle: "Expense saved",
@@ -3818,7 +4227,7 @@ els.receivingForm.addEventListener("submit", async (event) => {
     await createCashEntryFromForm(els.receivingForm, "receiving");
     els.receivingForm.reset();
     setDefaultDates();
-    await loadData();
+    await refreshAfterWrite();
   }, {
     busyText: "Saving...",
     successTitle: "Receiving saved",
@@ -3838,7 +4247,7 @@ els.ownerExpenseForm.addEventListener("submit", async (event) => {
     await createOwnerEntryFromForm(els.ownerExpenseForm, "expense");
     els.ownerExpenseForm.reset();
     setDefaultDates();
-    await loadData();
+    await refreshAfterWrite();
   }, {
     busyText: "Saving...",
     successTitle: "Owner expense saved",
@@ -3858,7 +4267,7 @@ els.ownerReceivingForm.addEventListener("submit", async (event) => {
     await createOwnerEntryFromForm(els.ownerReceivingForm, "receiving");
     els.ownerReceivingForm.reset();
     setDefaultDates();
-    await loadData();
+    await refreshAfterWrite();
   }, {
     busyText: "Saving...",
     successTitle: "Owner receiving saved",
@@ -3879,7 +4288,6 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
   if (!member) return;
   const override = {
     mode: "edited",
-    invoiceId: `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
     seats: positiveIntOr(data.get("seats"), 1),
     standardPrice: nonNegativeMoney(data.get("standardPrice"), 0),
     amount: nonNegativeMoney(data.get("invoiceAmount"), 0),
@@ -3887,6 +4295,7 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
     validTill: data.get("validTill"),
     note: data.get("editNote")
   };
+  override.invoiceId = receiptAttempt(els.editInvoiceForm, { memberId: member.id, ...override }, "INV").number;
   withControlLock(submitButton, async () => {
     setSyncStatus("Saving", "busy");
     const invoice = await createInvoice(member, override);
@@ -3897,7 +4306,7 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
       amount: override.amount,
       valid_till: override.validTill
     });
-    await loadData();
+    await refreshAfterWrite();
     els.editInvoiceDialog.close();
     openInvoice(member, override);
   }, {
@@ -3915,7 +4324,7 @@ if (session?.access_token) {
   showApp();
   loadData().catch((error) => {
     console.error(error);
-    showAuth("Please sign in again.");
+    showAuth(`Could not load Spaces: ${error.message}`);
   });
 } else {
   showAuth();

@@ -83,7 +83,7 @@ async function createMessageLog(token, row) {
     const message = String(error.message || "");
     if (message.includes("duplicate key") || message.includes("whatsapp_messages_active_recipient_key")) {
       const existing = await findExistingMessage(token, row.invoice_number, row.recipient_phone, row.recipient_type);
-      if (existing) return existing;
+      if (existing) return { ...existing, alreadyClaimed: true };
     }
     throw new Error(`Could not create the WhatsApp send log. ${error.message}`);
   }
@@ -136,7 +136,7 @@ async function sendToRecipient({
     status: "queued"
   });
   if (!log?.id) throw new Error("Could not create the WhatsApp send log.");
-  if (log.status !== "queued") return { ok: true, duplicate: true, messageId: log.meta_message_id, recipientType };
+  if (log.alreadyClaimed || log.status !== "queued") return { ok: true, duplicate: true, messageId: log.meta_message_id, recipientType };
 
   try {
     const result = await sendReceiptTemplate({

@@ -263,6 +263,13 @@ h2 {
 
 .toast-stack {
   position: fixed;
+  top: auto;
+  left: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
   right: 18px;
   bottom: 18px;
   z-index: 9999;
@@ -1464,6 +1471,11 @@ label textarea {
 }
 
 @media (max-width: 760px) {
+  .sheet-message {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .toast-stack {
     right: 10px;
     bottom: 10px;

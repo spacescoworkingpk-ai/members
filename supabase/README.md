@@ -1,6 +1,6 @@
 # Supabase Setup
 
-Project ref inferred from the service role JWT:
+Project reference:
 
 ```text
 hsnkcrxowajnadwtzdlk
@@ -25,12 +25,16 @@ For an existing live database, apply numbered files in `supabase/migrations/`
 in filename order. The current accounting authority is:
 
 ```text
-supabase/migrations/20260715_accounting_integrity.sql
+supabase/migrations/20260906_reliable_write_paths.sql
 ```
 
-It replaces both payment RPC definitions, adds structural ledger references,
-settles edited invoices atomically, and tightens payment/invoice history rules.
-Do not use the older REST payment fallbacks after this migration is applied.
+It makes member bundles, payments, edited invoices, and linked ledger writes
+atomic. Request IDs protect retried creates from duplicate entries. Apply it
+before deploying the matching app.js. It does not backfill or reset balances.
+Do not use older multi-request REST write fallbacks.
+
+The live project successfully applied this migration on 13 September 2026.
+Schema changes are transactional and the migration is safe to reapply.
 
 ## Staff Login
 
@@ -51,7 +55,7 @@ After creating a user in Supabase Auth, approve them as staff from SQL Editor:
 
 ```sql
 insert into public.staff_profiles (user_id, full_name, role, active)
-select id, 'Staff Name', 'owner', true
+select id, 'Staff Name', 'staff', true
 from auth.users
 where email = 'staff@spacespk.com'
 on conflict (user_id) do update set
@@ -61,9 +65,24 @@ on conflict (user_id) do update set
   updated_at = now();
 ```
 
-Use `owner`, `manager`, or `staff` for the role. At the moment all active staff
-roles have the same app permissions; the role column is there so we can split
-permissions later.
+Use `owner`, `manager`, or `staff` for the role. Only the owner has the business
+ledger and aggregate revenue views. Staff can collect payments, register members,
+update member contact details, and edit their own operational entries for three
+days. System-generated receipt rows are locked; owner/staff transfers stay linked.
+
+## Regression Checks
+
+Run `npm test` for application and API regressions. To exercise PostgreSQL
+transactions, use a disposable, empty local database (never the live project):
+
+```sh
+SPACES_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/spaces_test node scripts/test-database.mjs
+```
+
+The runner needs the `pg` package; `SPACES_TEST_PG_MODULE` can point at an existing
+installation. It refuses non-local hosts and non-empty databases, builds the
+schema, applies the reliability migration twice, and tests owner/staff permissions,
+retries, discounted payments, and transfer conservation.
 
 Option B: Direct migration from this machine
 
