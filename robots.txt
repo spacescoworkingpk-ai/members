@@ -2,5 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api/
+Disallow: /i/
 
 Sitemap: https://spacespk.com/sitemap.xml

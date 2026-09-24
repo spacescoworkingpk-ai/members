@@ -1,7 +1,10 @@
 # Spaces WhatsApp Receipt Setup
 
-The app is ready to send a PDF receipt automatically after `Mark paid`.
-Complete these external setup steps before enabling it for staff.
+The active staff workflow is manual WhatsApp sharing with private PDF links.
+See [Invoice Sharing](INVOICE_SHARING.md). Mark paid does not automatically send
+messages and does not require Meta setup.
+
+The instructions below document the inactive, optional Meta API integration only.
 
 ## 1. Supabase
 

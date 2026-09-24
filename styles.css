@@ -2164,3 +2164,40 @@ h1 {
   justify-content: center;
   min-height: 0;
 }
+.collection-list { margin-top: 12px; }
+.collection-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto; gap: 20px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--line, #e3e5e8); }
+.collection-person, .collection-amount { display: grid; gap: 5px; min-width: 0; }
+.collection-person strong { font-size: 16px; overflow-wrap: anywhere; }
+.collection-person span { font-size: 13px; color: #62676d; overflow-wrap: anywhere; }
+.collection-person .arrears-note { color: #995324; }
+.collection-amount { justify-items: start; }
+.collection-actions { display: flex; gap: 8px; }
+#memberViewTabs { margin-bottom: 18px; }
+.invoice-link-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 18px; border-bottom: 1px solid #e3e5e8; background: #f4f8fa; }
+.invoice-link-actions > div { flex: 1 1 100%; display: grid; gap: 5px; overflow-wrap: anywhere; }
+.invoice-link-actions span { font-size: 12px; color: #62676d; }
+.invoice-link-actions a { text-decoration: none; text-align: center; }
+[hidden] { display: none !important; }
+@media (max-width: 680px) {
+  .collection-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .collection-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; }
+  .collection-actions button, .invoice-link-actions button, .invoice-link-actions a { min-height: 44px; white-space: normal; }
+  .invoice-link-actions { display: grid; grid-template-columns: 1fr 1fr; padding: 14px; }
+  .invoice-link-actions > div, #openInvoiceWhatsapp, #prepareInvoiceLink { grid-column: 1 / -1; }
+  .collection-amount strong { font-size: 14px; }
+}
+#invoicePreviewSummary { padding: 18px; cursor: pointer; font-size: 14px; font-weight: 650; border-bottom: 1px solid #e3e5e8; }
+.saved-invoice-dialog .receipt-actions { position: static; }
+.saved-invoice-dialog #whatsappReceipt { background: white; color: var(--ink, #272b2d); border: 1px solid #d9e3e8; }
+@media (max-width: 680px) {
+  .saved-invoice-dialog .receipt-box { background: white; padding: 22px 16px; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .saved-invoice-dialog .receipt-title { margin-top: 24px; }
+  .saved-invoice-dialog .receipt-title h2 { font-size: 20px; line-height: 1.2; }
+  .saved-invoice-dialog .receipt-table { margin-top: 22px; }
+  .saved-invoice-dialog .receipt-footer { margin-top: 24px; }
+  .saved-invoice-dialog .signature-line { letter-spacing: 0; }
+  #receiptDialog.saved-invoice-dialog #whatsappReceipt { order: 1; grid-column: 1 / -1; min-height: 44px; font-size: 13px; }
+}
+@media print {
+  #invoiceLinkActions, #invoicePreviewSummary { display: none !important; }
+}

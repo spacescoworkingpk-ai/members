@@ -1,6 +1,9 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/i/:token", "destination": "/api/shared-invoice?token=:token" }
+  ],
   "redirects": [
     {
       "source": "/website",

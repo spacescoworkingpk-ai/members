@@ -421,6 +421,18 @@
                 <button class="primary-button" id="openAddMember" type="button">Add member</button>
               </div>
             </div>
+            <div class="filter-chips" id="memberViewTabs" role="tablist" aria-label="Member view">
+              <button class="chip active" data-member-view="payments" type="button" role="tab" aria-selected="true">Payments</button>
+              <button class="chip" data-member-view="records" type="button" role="tab" aria-selected="false">Member records</button>
+            </div>
+            <div id="collectionsPanel">
+              <div class="member-toolbar">
+                <label class="search"><span>Find member</span><input id="collectionSearch" type="search" placeholder="Name, phone or plan"></label>
+                <label class="search"><span>Payment status</span><select id="collectionFilter"><option value="unpaid">Unpaid</option><option value="all">All members</option><option value="paid">Paid</option></select></label>
+              </div>
+              <div id="collectionList" class="collection-list"></div>
+            </div>
+            <div id="memberRecordsPanel" hidden>
             <div class="member-toolbar">
               <div class="filter-chips" id="memberFilters" role="tablist" aria-label="Filter members">
                 <button class="chip active" data-filter="all" type="button" role="tab" aria-selected="true">All</button>
@@ -452,6 +464,7 @@
               </table>
             </div>
             <p class="sheet-message" id="memberCount"></p>
+            </div>
           </div>
         </section>
 
@@ -652,7 +665,17 @@
     </dialog>
 
     <dialog id="receiptDialog">
-      <div class="receipt-preview" id="receiptPreview"></div>
+      <div id="invoiceLinkActions" class="invoice-link-actions" hidden>
+        <div><strong id="invoiceRecipient"></strong><span id="invoiceLinkExpiry"></span></div>
+        <a id="openInvoiceWhatsapp" class="primary-button" target="_blank" rel="noopener noreferrer" hidden>Open WhatsApp</a>
+        <button id="prepareInvoiceLink" class="primary-button" type="button">Prepare WhatsApp message</button>
+        <button id="copyInvoiceLink" class="ghost-button" type="button" hidden>Copy PDF link</button>
+        <button id="revokeInvoiceLinks" class="ghost-button" type="button">Revoke shared links</button>
+      </div>
+      <details id="invoicePreviewDetails" open>
+        <summary id="invoicePreviewSummary">Invoice details</summary>
+        <div class="receipt-preview" id="receiptPreview"></div>
+      </details>
       <div class="receipt-send-status" id="receiptSendStatus" role="status" aria-live="polite"></div>
       <div class="modal-actions receipt-actions">
         <button class="ghost-button" id="closeReceipt" type="button">Close</button>

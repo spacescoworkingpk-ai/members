@@ -30,9 +30,9 @@ test("receipt retries preserve both receipt number and original service validity
 
 test("quick receipt retry after an unreadable confirmation uses identical RPC parameters", async () => {
   let attempts = 0;
-  const app = signedIn({ fetch: () => ++attempts === 1
+  const app = signedIn({ fetch: ({body}) => ++attempts === 1
     ? new Response("{broken", { status: 200 })
-    : jsonResponse([{ invoice_id: "quick-id", invoice_number: "SP-test" }]) });
+    : jsonResponse([{ receipt_id: "quick-id", receipt_number: body.p_receipt_number }]) });
   app.nodes.get("#quickInvoiceForm").formValues = {
     service: "day-pass", quantity: "1", rate: "1500", total: "1500",
     name: "Test guest", phone: "03001234567", paymentMode: "spaces_account"
@@ -48,6 +48,18 @@ test("financial form validation rejects values that overflow database integers",
   assert.throws(() => app.call("positiveWholeMoney", 2147483648, "Amount"), /rupee/);
   assert.throws(() => app.call("nonNegativeWholeMoney", 2147483648, "Amount"), /rupee/);
 });
+
+for (const returned of [{ invoice_id: "wrong-contract" }, { receipt_id: "saved", receipt_number: "another-receipt" }]) {
+  test(`quick receipt rejects mismatched confirmation ${JSON.stringify(returned)}`, async () => {
+    const app = signedIn({ fetch: () => jsonResponse([returned]) });
+    app.nodes.get("#quickInvoiceForm").formValues = {
+      service: "day-pass", quantity: "1", rate: "1500", total: "1500",
+      name: "Test guest", phone: "03001234567", paymentMode: "spaces_account"
+    };
+    app.run("openInvoice = () => { throw new Error('Must not preview an unconfirmed receipt'); }");
+    await assert.rejects(app.call("generateQuickInvoice"), /confirmation was incomplete/i);
+  });
+}
 
 test("gateway failure keeps the same idempotency key for an expense retry", async () => {
   let attempts = 0;
@@ -416,10 +428,17 @@ test("edited membership settlement renders the actual paid amount and consistent
   assert.equal(receipt.lines.reduce((sum, line) => sum + line.amount, 0), receipt.amount);
 });
 
-test("reopened paid receipt uses stored payment amount after member rate changes", () => {
-  const app = signedIn();
+test("reopened paid receipt uses stored payment amount after member rate changes", async () => {
+  const app = signedIn({ fetch: () => jsonResponse({ receipt: {
+    invoiceId: "SC-SAVED", customerName: "Member", phone: "923001234567", description: "Saved plan",
+    documentStatus: "PAID", issuedDate: "2026-09-01", validTill: "2026-10-01",
+    lines: [{ description: "Saved plan", quantity: 1, unitPrice: 8000, amount: 8000 }],
+    quantity: 1, standardPrice: 8000, unitPrice: 8000, discount: 0, amount: 8000, tax: 0, total: 8000
+  } }) });
   app.run("prefetchReceiptPdf = () => {}");
-  app.call("openReceipt", receiptMember({ paid: true, paidAmount: 8000 }));
+  const member = receiptMember({ paid: true, paidAmount: 8000 });
+  app.set("invoices", [{ id: "stored-id", member_id: member.id, valid_till: member.validTill, status: "paid" }]);
+  await app.call("openReceipt", member);
   const receipt = app.get("currentReceiptShare").receipt;
   assert.equal(receipt.total, 8000, "historical receipt must not be repriced to the current plan fee");
 });

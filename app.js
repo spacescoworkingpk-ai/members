@@ -182,6 +182,21 @@ const els = {
   webActions: document.querySelector("#webActions"),
   webAnalyticsMessage: document.querySelector("#webAnalyticsMessage"),
   membersTable: document.querySelector("#membersTable"),
+  memberViewTabs: document.querySelector("#memberViewTabs"),
+  collectionsPanel: document.querySelector("#collectionsPanel"),
+  memberRecordsPanel: document.querySelector("#memberRecordsPanel"),
+  collectionList: document.querySelector("#collectionList"),
+  collectionSearch: document.querySelector("#collectionSearch"),
+  collectionFilter: document.querySelector("#collectionFilter"),
+  invoiceLinkActions: document.querySelector("#invoiceLinkActions"),
+  invoicePreviewDetails: document.querySelector("#invoicePreviewDetails"),
+  invoicePreviewSummary: document.querySelector("#invoicePreviewSummary"),
+  invoiceRecipient: document.querySelector("#invoiceRecipient"),
+  invoiceLinkExpiry: document.querySelector("#invoiceLinkExpiry"),
+  openInvoiceWhatsapp: document.querySelector("#openInvoiceWhatsapp"),
+  prepareInvoiceLink: document.querySelector("#prepareInvoiceLink"),
+  copyInvoiceLink: document.querySelector("#copyInvoiceLink"),
+  revokeInvoiceLinks: document.querySelector("#revokeInvoiceLinks"),
   receiptQueue: document.querySelector("#receiptQueue"),
   ledger: document.querySelector("#ledger"),
   planList: document.querySelector("#planList"),
@@ -820,13 +835,15 @@ function mapMember(row) {
     : null;
   const previousUnpaidInvoices = memberInvoices.filter((invoice) => {
     const type = invoice.invoice_type || "membership";
-    return type === "membership"
+    return ["membership", "edited"].includes(type)
       && ["sent", "overdue"].includes(invoice.status)
       && invoice.valid_till < cycle.validTill;
   });
   const editedInvoice = memberInvoices
     .filter((invoice) => invoice.invoice_type === "edited" && invoice.status === "sent" && invoice.valid_till === cycle.validTill)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0] || null;
+  const issuedInvoice = editedInvoice || memberInvoices.find((invoice) => invoice.invoice_type === "membership"
+    && invoice.status === "sent" && invoice.valid_till === cycle.validTill) || null;
   return {
     id: row.id,
     name: row.full_name,
@@ -853,6 +870,7 @@ function mapMember(row) {
     paidAt: paidPayment?.paid_at?.slice(0, 10) || paidInvoice?.issue_date || null,
     paidAmount: paidPayment ? Number(paidPayment.amount || 0) : Number(paidInvoice?.total_amount || 0),
     editedInvoice,
+    issuedInvoice,
     previousUnpaidAmount: previousUnpaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0),
     previousUnpaidCount: previousUnpaidInvoices.length
   };
@@ -1060,7 +1078,8 @@ function membershipCycle(memberOrRow, referenceDate = new Date()) {
   if (reference < fromDate) {
     fromDate = dateInMonthByJoiningDay(reference.getFullYear(), reference.getMonth() - 1, joining.getDate());
   }
-  const validTillDate = addMonthsClamped(fromDate, 1);
+  if (fromDate < joining) fromDate = joining;
+  const validTillDate = dateInMonthByJoiningDay(fromDate.getFullYear(), fromDate.getMonth() + 1, joining.getDate());
   return {
     from: isoDate(fromDate),
     validTill: isoDate(validTillDate)
@@ -1393,7 +1412,7 @@ function activeMemberRow(member) {
       <td><span class="status ${state}">${stateLabel(state)}</span></td>
       <td>
         ${member.paid ? "" : `<button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>`}
-        <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Receipt</button>
+        <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">${member.paid ? "Receipt" : "Invoice"}</button>
         <button class="tiny-button" data-action="history" data-id="${member.id}" type="button">History</button>
         <button class="tiny-button" data-action="edit-member" data-id="${member.id}" type="button">Edit</button>
         ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Discount invoice</button>` : ""}
@@ -1403,7 +1422,37 @@ function activeMemberRow(member) {
   `;
 }
 
+function renderCollections() {
+  if (!els.collectionList) return;
+  const query = els.collectionSearch.value.trim().toLowerCase();
+  const filter = els.collectionFilter.value || "unpaid";
+  const earlierInvoices = invoices.filter((invoice) => invoice.status === "sent" && ["membership", "edited"].includes(invoice.invoice_type))
+    .map((invoice) => {
+      const member = memberRecords.find((item) => item.id === invoice.member_id);
+      if (!member || invoice.valid_till >= member.validTill) return null;
+      return { ...member, paid: false, previousUnpaidCount: 0, issuedInvoice: invoice,
+        membershipFrom: invoice.membership_from || invoice.issue_date, validTill: invoice.valid_till,
+        collectionInvoiceId: invoice.id, earlierPeriod: true };
+    }).filter(Boolean);
+  const list = [...members, ...earlierInvoices].filter((member) => memberMatchesSearch(member, query))
+    .filter((member) => filter === "all" || (filter === "paid" ? member.paid : !member.paid))
+    .sort((a, b) => Number(a.paid) - Number(b.paid)
+      || a.validTill.localeCompare(b.validTill) || a.name.localeCompare(b.name));
+  els.collectionList.innerHTML = list.length ? list.map((member) => {
+    const amount = member.paid ? member.paidAmount : member.issuedInvoice?.total_amount ?? member.editedInvoice?.total_amount ?? member.monthlyFee;
+    return `<article class="collection-row">
+      <div class="collection-person"><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.plan)}</span><span>${formatDate(member.membershipFrom)} to ${formatDate(member.validTill)}</span>
+      ${member.earlierPeriod ? '<span class="arrears-note">Earlier unpaid period</span>' : ""}</div>
+      <div class="collection-amount"><strong>${fmt.format(Number(amount))}</strong><span class="status ${member.paid ? "paid" : "overdue"}">${member.paid ? "Paid" : "Unpaid"}</span></div>
+      <div class="collection-actions">
+        <button class="ghost-button" data-action="generate-invoice" data-id="${member.id}" data-invoice-id="${member.collectionInvoiceId || ""}" type="button">${member.paid ? "Receipt" : member.issuedInvoice ? "Open invoice" : "Generate invoice"}</button>
+        ${member.paid ? "" : `<button class="primary-button" data-action="paid" data-id="${member.id}" data-invoice-id="${member.collectionInvoiceId || ""}" type="button">Mark paid</button>`}
+      </div></article>`;
+  }).join("") : '<p class="sheet-message">No members match this selection.</p>';
+}
+
 function renderMembers() {
+  renderCollections();
   const query = els.memberSearch.value.trim().toLowerCase();
 
   if (memberFilter === "archived") {
@@ -1906,7 +1955,7 @@ function renderReceipts() {
       </header>
       <div class="queue-actions">
         <button class="tiny-button secondary" data-action="paid" data-id="${member.id}" type="button">Mark paid</button>
-        <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Preview receipt</button>
+        <button class="tiny-button" data-action="receipt" data-id="${member.id}" type="button">Generate invoice</button>
         ${canSeeRevenue() ? `<button class="tiny-button" data-action="edit-invoice" data-id="${member.id}" type="button">Edited invoice</button>` : ""}
       </div>
     </article>
@@ -2827,12 +2876,20 @@ function rateLabel(member) {
   return `${fmt.format(monthlyFee)}<span class="rate-note">Standard ${fmt.format(basePrice)} | Discount ${fmt.format(discount)}</span>`;
 }
 
-async function markPaid(id, control = null) {
-  const member = members.find((item) => item.id === id);
+async function markPaid(id, control = null, savedInvoiceId = null) {
+  let member = members.find((item) => item.id === id);
+  if (savedInvoiceId) {
+    const saved = invoices.find((invoice) => invoice.id === savedInvoiceId && invoice.member_id === id
+      && invoice.status === "sent" && ["membership", "edited"].includes(invoice.invoice_type));
+    const record = memberRecords.find((item) => item.id === id);
+    if (!saved || !record) return;
+    member = { ...record, paid: false, issuedInvoice: saved, validTill: saved.valid_till,
+      membershipFrom: saved.membership_from || saved.issue_date };
+  }
   if (!member || member.paid) return;
-  const settlementAmount = nonNegativeMoney(member.editedInvoice?.total_amount ?? member.monthlyFee, 0);
+  const settlementAmount = nonNegativeMoney(member.issuedInvoice?.total_amount ?? member.editedInvoice?.total_amount ?? member.monthlyFee, 0);
   return withControlLock(control, async () => {
-    const paymentSource = await promptPaymentSource(`How was ${member.name}'s payment collected?`);
+    const paymentSource = await promptPaymentSource(`Confirm ${fmt.format(settlementAmount)} received from ${member.name} for the period ending ${formatDate(member.validTill)}. Select collection source.`);
     if (!paymentSource) return false;
     setSyncStatus("Saving", "busy");
     let receiptRows;
@@ -2853,11 +2910,15 @@ async function markPaid(id, control = null) {
     const invoiceNumber = receiptRow?.invoice_number || `SC-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
     // Open the receipt right away; the receipt content is built from data we
     // already have, so the full table refresh can happen in the background.
-    openInvoice({ ...member, paid: true }, { mode: "receipt", invoiceId: invoiceNumber, amount: settlementAmount });
-    setReceiptSendStatus("Payment saved. Tap Share PDF to send the receipt through WhatsApp.", "success");
+    openInvoice({ ...member, paid: true }, { mode: "receipt", invoiceId: invoiceNumber, persistedInvoiceId: receiptRow.invoice_id, amount: settlementAmount });
+    setReceiptSendStatus("Payment saved. The receipt is ready to share.", "success");
+    if (receiptRow.invoice_id) {
+      try { await openSavedInvoice(receiptRow.invoice_id); }
+      catch { setReceiptSendStatus("Payment saved. Reopen this receipt to load the saved PDF before sharing.", "error"); }
+    }
     await refreshAfterWrite();
   }, {
-    actionKey: `paid:${id}`,
+    actionKey: `paid:${id}:${member.validTill}`,
     busyText: "Saving...",
     successTitle: "Receipt marked paid",
     successDetail: `${member.name} receipt was saved.`,
@@ -2919,14 +2980,14 @@ async function createInvoiceLegacy(member, override = {}) {
 
 function openInvoice(member, override = {}) {
   const invoiceId = override.invoiceId || `${override.mode === "edited" ? "INV" : "SC"}-${new Date().getFullYear()}-${member.id.slice(0, 6).toUpperCase()}`;
-  const { amount, tax, total, standardPrice, unitPrice, discount } = invoicePricing(member, override);
+  const { amount, tax, total, standardPrice, unitPrice, discount } = override.document || invoicePricing(member, override);
   const invoiceTitle = override.title || (override.mode === "edited" ? "Spaces Membership Invoice" : "Spaces Membership");
   const invoiceLabel = override.mode === "edited" ? "Invoice No." : "Receipt No.";
   const statusLine = override.mode === "edited" ? "Edited invoice" : "Receipt";
   const documentStatus = override.status || (override.mode === "edited" || member.paid === false ? "DRAFT / UNPAID" : "PAID");
   const issuedDate = receiptDateFor(member, override);
-  const issuedDateLabel = override.mode === "quick" ? "Receipt Date" : "Membership From";
-  const validText = validityLabel(member, override);
+  const issuedDateLabel = override.document?.issuedDateLabel || (override.mode === "quick" ? "Receipt Date" : "Membership From");
+  const validText = override.document?.validText || validityLabel(member, override);
   const description = override.description || member.plan;
   const quantity = positiveIntOr(override.seats ?? member.seats, 1);
   const lines = invoiceLines(member, override);
@@ -2961,6 +3022,8 @@ function openInvoice(member, override = {}) {
 
   const standardCell = standardPrice.toLocaleString("en-PK");
   currentReceiptShare = {
+    persistedInvoiceId: override.persistedInvoiceId || null,
+    canonical: Boolean(override.document),
     message,
     fileName: `${invoiceId.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-spaces-receipt.pdf`,
     memberId: member.id || null,
@@ -2996,7 +3059,7 @@ function openInvoice(member, override = {}) {
         <div>
           <img class="receipt-logo" src="assets/spaces-logo.svg" alt="Spaces logo">
           <div class="receipt-title">
-            <h2>${invoiceTitle}</h2>
+            <h2>${escapeHtml(invoiceTitle)}</h2>
             <div class="receipt-meta">
               <span>This ${override.mode === "edited" ? "invoice" : "receipt"} is addressed to:</span>
               <span><strong>Name:</strong> ${escapeHtml(member.name)}</span>
@@ -3008,7 +3071,7 @@ function openInvoice(member, override = {}) {
         <div class="receipt-contact">
           <span class="receipt-id">
             ${invoiceLabel}
-            <strong>${invoiceId}</strong>
+            <strong>${escapeHtml(invoiceId)}</strong>
           </span>
         </div>
       </div>
@@ -3084,6 +3147,8 @@ function openInvoice(member, override = {}) {
     : "";
   setReceiptSendStatus("");
   els.whatsappReceipt.textContent = "Share PDF";
+  els.invoicePreviewDetails.open = !override.persistedInvoiceId || window.innerWidth > 680;
+  updateInvoiceLinkControls();
   // Start building the PDF while the receipt is being reviewed so Share/Save
   // respond instantly instead of waiting on the API round trip.
   prefetchReceiptPdf();
@@ -3238,13 +3303,105 @@ async function shareReceiptToWhatsapp(event) {
   sendCurrentReceipt().catch(() => {});
 }
 
-function openReceipt(member) {
-  const stored = invoices.find((invoice) => invoice.member_id === member.id && invoice.valid_till === member.validTill && invoice.status === "paid");
-  openInvoice(member, {
-    mode: "receipt",
-    ...(stored ? { invoiceId: stored.invoice_number, validTill: stored.valid_till } : {}),
-    amount: member.paid ? (stored?.subtotal_amount ?? member.paidAmount ?? member.monthlyFee) : member.editedInvoice?.total_amount ?? member.monthlyFee
+async function invoiceLinkRequest(invoiceId, action = "document") {
+  await ensureFreshSession();
+  const response = await fetch("/api/invoice-link", {
+    method: "POST", headers: { Authorization: `Bearer ${session?.access_token || ""}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ invoiceId, action })
   });
+  let result;
+  try { result = await response.json(); } catch { throw new Error("Invoice service returned an unreadable response. Please retry."); }
+  if (!response.ok) throw new Error(result?.error || "Could not load the saved invoice.");
+  return result;
+}
+
+async function openSavedInvoice(invoiceId) {
+  const { receipt } = await invoiceLinkRequest(invoiceId);
+  if (!receipt?.invoiceId || !receipt.lines?.length) throw new Error("Saved invoice details are incomplete.");
+  openInvoice({ id: "", name: receipt.customerName, phone: receipt.phone, plan: receipt.description,
+    seats: receipt.quantity, monthlyFee: receipt.amount, membershipFrom: receipt.issuedDate,
+    validTill: receipt.validTill, paid: receipt.documentStatus === "PAID" }, {
+    mode: receipt.documentStatus === "PAID" ? "receipt" : "edited",
+    title: receipt.invoiceTitle, invoiceId: receipt.invoiceId, persistedInvoiceId: invoiceId,
+    status: receipt.documentStatus, document: receipt, receiptDate: receipt.issuedDate,
+    validTill: receipt.validTill, amount: receipt.amount, tax: receipt.tax, lines: receipt.lines
+  });
+  currentReceiptShare.receipt = receipt;
+  return currentReceiptShare;
+}
+
+async function generateMemberInvoice(member, control = null) {
+  return withControlLock(control, async () => {
+    const result = await callRpc("generate_membership_invoice", { p_member_id: member.id, p_valid_till: member.validTill });
+    const saved = Array.isArray(result) ? result[0] : result;
+    if (!saved?.invoice_id) throw new Error("Invoice confirmation was incomplete. Refresh before retrying.");
+    await refreshAfterWrite();
+    try {
+      const share = await openSavedInvoice(saved.invoice_id);
+      await preparePrivateInvoiceLink(share);
+    } catch (error) {
+      showToast("Invoice saved; no payment recorded", error.message, "error");
+      return false;
+    }
+  }, { actionKey: `invoice:${member.id}`, busyText: "Preparing...", successTitle: "Invoice ready",
+    successDetail: "No payment or balance change was recorded.", errorTitle: "Could not generate invoice", cooldownMs: 1800 }).catch(() => {});
+}
+
+function updateInvoiceLinkControls() {
+  if (!els.invoiceLinkActions) return;
+  const share = currentReceiptShare;
+  const saved = Boolean(share.persistedInvoiceId);
+  els.receiptDialog.classList.toggle("saved-invoice-dialog", saved);
+  els.invoicePreviewSummary.hidden = !saved;
+  els.invoicePreviewSummary.textContent = share.receipt ? `${fmt.format(share.receipt.total)} | ${share.receipt.documentStatus} | Details` : "Invoice details";
+  els.invoiceLinkActions.hidden = !saved;
+  els.prepareInvoiceLink.hidden = !saved || Boolean(share.privateUrl);
+  els.prepareInvoiceLink.disabled = false;
+  els.openInvoiceWhatsapp.hidden = !share.privateUrl || !share.whatsappUrl;
+  els.copyInvoiceLink.hidden = !share.privateUrl;
+  els.openInvoiceWhatsapp.removeAttribute("href");
+  if (share.privateUrl && share.whatsappUrl) els.openInvoiceWhatsapp.href = share.whatsappUrl;
+  els.invoiceRecipient.textContent = share.receipt ? `${share.receipt.customerName}${share.receipt.phone ? ` | ${share.receipt.phone}` : " | No phone saved"}` : "";
+  els.invoiceLinkExpiry.textContent = share.expiresAt ? `Private PDF link expires ${formatDate(share.expiresAt.slice(0, 10))}` : "";
+  els.whatsappReceipt.textContent = saved ? "Share PDF attachment" : "Share PDF";
+  // Never share a locally reconstructed paid document before its saved lines load.
+  els.whatsappReceipt.disabled = saved && !share.canonical;
+  els.viewReceipt.disabled = saved && !share.canonical;
+  els.printReceipt.disabled = saved && !share.canonical;
+}
+
+async function preparePrivateInvoiceLink(share = currentReceiptShare) {
+  if (!share.persistedInvoiceId) throw new Error("Save the invoice before sharing.");
+  const result = await invoiceLinkRequest(share.persistedInvoiceId, "create");
+  if (!/^\/i\/[A-Za-z0-9_-]{43}$/.test(result.path || "") || !result.receipt) throw new Error("The private link was not confirmed. Please retry.");
+  share.privateUrl = new URL(result.path, window.location.origin).href;
+  share.expiresAt = result.expiresAt;
+  const receipt = result.receipt;
+  const paid = receipt.documentStatus === "PAID";
+  const message = [
+    `Hello ${receipt.customerName},`, "",
+    paid ? "Thank you for your payment to Spaces Coworking." : "Your Spaces Coworking membership invoice is ready.",
+    `Invoice: ${receipt.invoiceId}`,
+    `Membership: ${formatDate(receipt.issuedDate)} to ${formatDate(receipt.validTill)}`,
+    `${paid ? "Amount received" : "Amount due"}: ${fmt.format(receipt.total)}`,
+    "", `View or download your PDF: ${share.privateUrl}`, "",
+    paid ? "We're glad to have you at Spaces." : "Please let us know once you've paid, or message us with any questions.",
+    "Spaces Coworking"
+  ].join("\n");
+  share.message = message;
+  share.whatsappUrl = whatsappPhone(receipt.phone) ? `https://wa.me/${whatsappPhone(receipt.phone)}?text=${encodeURIComponent(message)}` : "";
+  if (currentReceiptShare === share) {
+    updateInvoiceLinkControls();
+    setReceiptSendStatus(share.whatsappUrl ? "Invoice ready. Nothing has been sent yet." : "Private PDF ready. Add a valid customer phone number or copy the link.", "success");
+  }
+}
+
+function openReceipt(member, control = null) {
+  const stored = invoices.find((invoice) => invoice.member_id === member.id && invoice.valid_till === member.validTill && invoice.status === "paid");
+  if (stored) return withControlLock(control, () => openSavedInvoice(stored.id), {
+    actionKey: `invoice:${member.id}`, busyText: "Loading...", errorTitle: "Could not open receipt"
+  }).catch(() => {});
+  return generateMemberInvoice(member, control);
 }
 
 function openStatement(member) {
@@ -3656,7 +3813,9 @@ async function generateQuickInvoice() {
       p_notes: note || null
     });
     const receipt = Array.isArray(result) ? result[0] : result;
-    if (!receipt?.invoice_id) throw new Error("Receipt confirmation was incomplete. Check the latest records before retrying.");
+    if (!receipt?.receipt_id || receipt.receipt_number !== receiptNumber) {
+      throw new Error("Receipt confirmation was incomplete. Check the latest records before retrying.");
+    }
   } catch (error) {
     throw new Error(describeWriteFailure(error, "receipt"));
   }
@@ -3920,8 +4079,15 @@ document.addEventListener("click", (event) => {
   }
   const member = memberRecords.find((item) => item.id === button.dataset.id);
   if (!member) return;
-  if (button.dataset.action === "paid") markPaid(member.id, button);
-  if (button.dataset.action === "receipt") openReceipt(member);
+  if (button.dataset.action === "paid") markPaid(member.id, button, button.dataset.invoiceId || null);
+  if (button.dataset.action === "receipt" || button.dataset.action === "generate-invoice") {
+    if (button.dataset.invoiceId) {
+      withControlLock(button, async () => {
+        const share = await openSavedInvoice(button.dataset.invoiceId);
+        await preparePrivateInvoiceLink(share);
+      }, { busyText: "Loading...", errorTitle: "Could not open invoice" }).catch(() => {});
+    } else openReceipt(member, button);
+  }
   if (button.dataset.action === "history") openStatement(member);
   if (button.dataset.action === "edit-invoice") openEditedInvoiceForm(member);
 });
@@ -4125,13 +4291,57 @@ document.addEventListener("visibilitychange", () => {
 });
 window.setInterval(() => maybeRefreshData(), 60000);
 els.exportCsv.addEventListener("click", exportCsv);
-els.printReceipt.addEventListener("click", () => window.print());
+els.printReceipt.addEventListener("click", () => {
+  els.invoicePreviewDetails.open = true;
+  window.print();
+});
 els.viewReceipt.addEventListener("click", () => {
   viewCurrentReceipt().catch(() => {});
 });
 els.closeReceipt.addEventListener("click", () => els.receiptDialog.close());
 if (els.closeStatement) els.closeStatement.addEventListener("click", () => els.statementDialog.close());
 els.whatsappReceipt.addEventListener("click", shareReceiptToWhatsapp);
+els.memberViewTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-member-view]");
+  if (!button) return;
+  const payments = button.dataset.memberView === "payments";
+  els.collectionsPanel.hidden = !payments;
+  els.memberRecordsPanel.hidden = payments;
+  els.memberViewTabs.querySelectorAll("button").forEach((item) => {
+    const selected = item === button;
+    item.classList.toggle("active", selected);
+    item.setAttribute("aria-selected", String(selected));
+  });
+});
+els.collectionSearch.addEventListener("input", renderCollections);
+els.collectionFilter.addEventListener("change", renderCollections);
+els.prepareInvoiceLink.addEventListener("click", () => {
+  const share = currentReceiptShare;
+  withControlLock(els.prepareInvoiceLink, () => preparePrivateInvoiceLink(share), {
+    busyText: "Preparing...", errorTitle: "Could not prepare invoice link"
+  }).catch(() => {});
+});
+els.openInvoiceWhatsapp.addEventListener("click", () => {
+  setReceiptSendStatus("WhatsApp opened. Review the message and tap Send there. Payment status is unchanged.", "success");
+});
+els.copyInvoiceLink.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(currentReceiptShare.privateUrl);
+    showToast("Private PDF link copied");
+  } catch { setReceiptSendStatus("Could not copy the link. Try Open WhatsApp instead.", "error"); }
+});
+els.revokeInvoiceLinks.addEventListener("click", async () => {
+  const share = currentReceiptShare;
+  if (!await confirmAction({ title: "Revoke invoice links?", message: "Every shared PDF link for this invoice will stop working. The invoice and payment stay unchanged.", confirmLabel: "Revoke links", danger: true })) return;
+  withControlLock(els.revokeInvoiceLinks, async () => {
+    await invoiceLinkRequest(share.persistedInvoiceId, "revoke");
+    share.privateUrl = null; share.expiresAt = null; share.whatsappUrl = "";
+    if (currentReceiptShare === share) {
+      updateInvoiceLinkControls();
+      setReceiptSendStatus("All previous PDF links have been revoked. You can prepare a new one.", "success");
+    }
+  }, { busyText: "Revoking...", successTitle: "Shared links revoked", errorTitle: "Could not revoke links" }).catch(() => {});
+});
 if (els.memberForm.elements.joiningDate) {
   els.memberForm.elements.joiningDate.addEventListener("change", () => {
     const joining = els.memberForm.elements.joiningDate.value;
@@ -4308,7 +4518,11 @@ els.editInvoiceForm.addEventListener("submit", async (event) => {
     });
     await refreshAfterWrite();
     els.editInvoiceDialog.close();
-    openInvoice(member, override);
+    try { await openSavedInvoice(invoice.id); }
+    catch {
+      showToast("Invoice saved", "Reopen the invoice to load its PDF. No payment was recorded.", "error");
+      return false;
+    }
   }, {
     busyText: "Saving...",
     successTitle: "Edited invoice ready",
